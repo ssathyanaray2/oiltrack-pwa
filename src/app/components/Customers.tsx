@@ -8,6 +8,7 @@ import type { Customer, Order } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders } from "../data/mockData";
 import { User, Phone, MapPin, Mail, Plus, ShoppingBag } from "lucide-react";
 import React from "react";
+import { formatMapsLink } from "../../lib/utils";
 
 export function Customers() {
   const isOnline = useOnlineStatus();
@@ -57,6 +58,19 @@ export function Customers() {
       </div>
     );
   }
+
+  const getMapsUrl = (customer: Customer): string | null => {
+    // Priority 1: use saved maps link directly
+    if (customer.maps_link?.trim()) {
+      return customer.maps_link.trim()
+    }
+    // Priority 2: fall back to address text search
+    if (customer.address?.trim()) {
+      return formatMapsLink(customer.address)
+    }
+    return null
+  }
+  
 
   return (
     <div className="p-6 pb-24 max-w-2xl mx-auto">
@@ -117,7 +131,13 @@ export function Customers() {
                 </div>
                 <div className="flex items-center gap-3 text-muted-foreground">
                   <MapPin className="h-5 w-5 flex-shrink-0" />
-                  <span>{customer.address}</span>
+                  <a
+                    href={getMapsUrl(customer) ?? ''}
+                    className="hover:text-primary transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span>{customer.address}</span>
+                  </a>
                 </div>
                 {customer.email && (
                   <div className="flex items-center gap-3 text-muted-foreground">

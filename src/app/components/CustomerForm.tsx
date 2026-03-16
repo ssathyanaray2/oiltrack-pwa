@@ -21,6 +21,7 @@ export function CustomerForm() {
     phone: "",
     address: "",
     email: "",
+    maps_link: "",
   });
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export function CustomerForm() {
               phone: customer.phone,
               address: customer.address,
               email: customer.email ?? "",
+              maps_link: customer.maps_link ?? "",
             });
           }
         } catch (e) {
@@ -51,6 +53,7 @@ export function CustomerForm() {
               phone: customer.phone,
               address: customer.address,
               email: customer.email ?? "",
+              maps_link: customer.maps_link ?? "",
             });
           }
         } finally {
@@ -65,6 +68,7 @@ export function CustomerForm() {
             phone: customer.phone,
             address: customer.address,
             email: customer.email ?? "",
+            maps_link: customer.maps_link ?? "",
           });
         }
         setLoading(false);
@@ -94,6 +98,7 @@ export function CustomerForm() {
           phone: formData.phone.trim(),
           address: formData.address.trim(),
           email: formData.email.trim() || undefined,
+          maps_link: formData.maps_link.trim() || undefined,
         });
         toast.success("Customer updated successfully");
       } else {
@@ -102,6 +107,7 @@ export function CustomerForm() {
           phone: formData.phone.trim(),
           address: formData.address.trim(),
           email: formData.email.trim() || undefined,
+          maps_link: formData.maps_link.trim() || undefined,
         });
         toast.success(`Customer "${formData.name}" added successfully`);
       }
@@ -196,6 +202,53 @@ export function CustomerForm() {
             rows={3}
             required
           />
+        </div>
+
+
+        {/* Maps Link */}
+        <div>
+          <label className="block mb-2 text-foreground font-medium">
+            Google Maps Link
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={formData.maps_link ?? ''}
+              onChange={e => setFormData(prev => ({ 
+                ...prev, maps_link: e.target.value 
+              }))}
+              className="flex-1 px-4 py-3 rounded-xl border-2 border-border 
+                        bg-background focus:outline-none focus:ring-2 
+                        focus:ring-primary text-base"
+              placeholder="Paste Google Maps link here"
+            />
+            {/* Paste button — super handy on mobile */}
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const text = await navigator.clipboard.readText()
+                  if (text.includes('maps.google') || 
+                      text.includes('goo.gl/maps') || 
+                      text.includes('maps.app.goo.gl')) {
+                    setFormData(prev => ({ ...prev, maps_link: text }))
+                    toast.success('Maps link pasted!')
+                  } else {
+                    toast.error('That doesn\'t look like a Maps link')
+                  }
+                } catch {
+                  toast.error('Could not read clipboard')
+                }
+              }}
+              className="bg-secondary px-4 py-3 rounded-xl border-2 
+                        border-border font-medium text-secondary-foreground"
+            >
+              Paste
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Open Google Maps → Share → Copy Link → Paste here
+          </p>
         </div>
 
         <div>

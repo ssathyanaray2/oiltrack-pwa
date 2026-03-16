@@ -13,6 +13,7 @@ export interface Customer {
   name: string;
   phone: string;
   address: string;
+  maps_link?: string;
   email?: string;
 }
 

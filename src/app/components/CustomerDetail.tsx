@@ -8,6 +8,7 @@ import type { Customer, Order, Product } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders, products as mockProducts } from "../data/mockData";
 import { ArrowLeft, User, Phone, MapPin, Mail, Calendar, Package as PackageIcon, Pencil } from "lucide-react";
 import React from "react";
+import { formatPhoneLink, formatMapsLink } from "../../lib/utils";
 
 export function CustomerDetail() {
   const { id } = useParams();
@@ -132,13 +133,15 @@ export function CustomerDetail() {
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-foreground">
             <Phone className="h-5 w-5 text-primary flex-shrink-0" />
-            <a href={`tel:${customer.phone}`} className="hover:text-primary transition-colors">
-              {customer.phone}
+            <a href={formatPhoneLink(customer.phone)} className="hover:text-primary transition-colors">
+              <span>{customer.phone}</span>
             </a>
           </div>
           <div className="flex items-center gap-3 text-foreground">
             <MapPin className="h-5 w-5 text-primary flex-shrink-0" />
-            <span>{customer.address}</span>
+            <a href={formatMapsLink(customer.address)} className="hover:text-primary transition-colors">
+              <span>{customer.address}</span>
+            </a>
           </div>
           {customer.email && (
             <div className="flex items-center gap-3 text-foreground">
