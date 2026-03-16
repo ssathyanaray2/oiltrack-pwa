@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
-import { Plus, Minus, Package, AlertTriangle } from "lucide-react";
+import { Plus, Minus, Package, AlertTriangle, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { getProducts, updateProductStock } from "../../lib/api";
+import { getProducts, updateProductStock, updateProductUnitPrice } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Product } from "../../lib/types";
 import { products as mockProducts } from "../data/mockData";
+import React from "react";
 
 export function Inventory() {
   const isOnline = useOnlineStatus();
@@ -17,7 +18,8 @@ export function Inventory() {
     productId: string;
     productName: string;
     unit: string;
-    action: "add" | "remove";
+    action: "add" | "remove" | "pricePerLiter";
+    pricePerLiter?: number;
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
 
@@ -45,7 +47,12 @@ export function Inventory() {
     load();
   }, [isOnline]);
 
-  const openModal = (productId: string, productName: string, unit: string, action: "add" | "remove") => {
+  const openModal = (
+    productId: string,
+    productName: string,
+    unit: string,
+    action: "add" | "remove" | "pricePerLiter"
+  ) => {
     setModalData({ productId, productName, unit, action });
     setInputAmount("");
     setShowModal(true);
@@ -57,9 +64,49 @@ export function Inventory() {
     setInputAmount("");
   };
 
+  // ── CONFIRM HANDLER ───────────────────────────────────────────────
   const handleConfirm = async () => {
     if (!modalData) return;
 
+    // ── PRICE PER LITER UPDATE ──────────────────────────────────────
+    if (modalData.action === "pricePerLiter") {
+      const newPrice = parseFloat(inputAmount);
+      if (isNaN(newPrice) || newPrice <= 0) {
+        toast.error("Please enter a valid price");
+        return;
+      }
+
+      if (isSupabaseConfigured() && isOnline) {
+        try {
+          const updated = await updateProductUnitPrice(modalData.productId, newPrice);
+          setProducts((prev) =>
+            prev.map((p) => (p.id === updated.id ? updated : p))
+          );
+          setCachedProducts(
+            products.map((p) =>
+              p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p
+            )
+          );
+          toast.success(`Price updated to ₹${newPrice} for ${modalData.productName}`);
+        } catch (e) {
+          toast.error("Failed to update price");
+          console.error(e);
+        }
+      } else {
+        // Offline: update locally
+        const next = products.map((p) =>
+          p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p
+        );
+        setProducts(next);
+        setCachedProducts(next);
+        toast.success(`Price updated to ₹${newPrice} (saved locally)`);
+      }
+
+      closeModal();
+      return;
+    }
+
+    // ── STOCK ADD / REMOVE ──────────────────────────────────────────
     const amount = parseInt(inputAmount);
     if (isNaN(amount) || amount <= 0) {
       toast.error("Please enter a valid amount");
@@ -74,9 +121,15 @@ export function Inventory() {
       try {
         const updated = await updateProductStock(modalData.productId, change);
         setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-        setCachedProducts(products.map((p) => (p.id === modalData.productId ? { ...p, stock: newStock } : p)));
+        setCachedProducts(
+          products.map((p) =>
+            p.id === modalData.productId ? { ...p, stock: newStock } : p
+          )
+        );
         const action = change > 0 ? "added to" : "removed from";
-        toast.success(`${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName}`);
+        toast.success(
+          `${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName}`
+        );
       } catch (e) {
         toast.error("Failed to update stock");
         console.error(e);
@@ -88,18 +141,35 @@ export function Inventory() {
       setProducts(next);
       setCachedProducts(next);
       const action = change > 0 ? "added to" : "removed from";
-      toast.success(`${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName} (saved locally)`);
+      toast.success(
+        `${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName} (saved locally)`
+      );
     }
     closeModal();
   };
 
   const getStockStatus = (stock: number, threshold: number) => {
     if (stock <= threshold * 0.5) {
-      return { level: "critical", color: "text-destructive", bgColor: "bg-destructive/10", borderColor: "border-destructive" };
+      return {
+        level: "critical",
+        color: "text-destructive",
+        bgColor: "bg-destructive/10",
+        borderColor: "border-destructive",
+      };
     } else if (stock <= threshold) {
-      return { level: "low", color: "text-accent-foreground", bgColor: "bg-accent/20", borderColor: "border-accent" };
+      return {
+        level: "low",
+        color: "text-accent-foreground",
+        bgColor: "bg-accent/20",
+        borderColor: "border-accent",
+      };
     }
-    return { level: "normal", color: "text-primary", bgColor: "bg-primary/10", borderColor: "border-border" };
+    return {
+      level: "normal",
+      color: "text-primary",
+      bgColor: "bg-primary/10",
+      borderColor: "border-border",
+    };
   };
 
   const lowStockProducts = products.filter((p) => p.stock <= p.lowStockThreshold);
@@ -126,12 +196,16 @@ export function Inventory() {
             <div>
               <h3 className="text-accent-foreground mb-2">Low Stock Alert</h3>
               <p className="text-foreground">
-                {lowStockProducts.length} {lowStockProducts.length === 1 ? "product needs" : "products need"} restocking:
+                {lowStockProducts.length}{" "}
+                {lowStockProducts.length === 1 ? "product needs" : "products need"} restocking:
               </p>
               <ul className="mt-2 space-y-1">
                 {lowStockProducts.map((product) => (
                   <li key={product.id} className="text-foreground">
-                    • {product.name}: <span className="font-medium">{product.stock} {product.unit}</span>
+                    • {product.name}:{" "}
+                    <span className="font-medium">
+                      {product.stock} {product.unit}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -159,13 +233,33 @@ export function Inventory() {
                       <AlertTriangle className={`h-5 w-5 ${stockStatus.color} flex-shrink-0`} />
                     )}
                   </div>
-                  <div className="flex items-baseline gap-2">
+
+                  {/* Stock */}
+                  <div className="flex items-baseline gap-2 mb-1">
                     <p className={`text-2xl ${stockStatus.color}`}>{product.stock}</p>
                     <p className="text-muted-foreground">{product.unit}</p>
                   </div>
+
+                  {/* Price per liter — tap to edit ✏️ */}
+                  <button
+                    onClick={() =>
+                      openModal(product.id, product.name, product.unit, "pricePerLiter")
+                    }
+                    className="flex items-center gap-2 group mt-1 hover:opacity-80 transition-opacity"
+                    title="Tap to edit price"
+                  >
+                    <p className={`text-2xl ${stockStatus.color}`}>
+                      ₹{product.pricePerLiter}
+                    </p>
+                    <p className="text-muted-foreground">per {product.unit.toLowerCase()}</p>
+                    <Pencil className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+
                   {stockStatus.level !== "normal" && (
                     <p className={`text-sm mt-2 ${stockStatus.color}`}>
-                      {stockStatus.level === "critical" ? "Critical: Restock immediately" : "Low stock: Restock soon"}
+                      {stockStatus.level === "critical"
+                        ? "Critical: Restock immediately"
+                        : "Low stock: Restock soon"}
                     </p>
                   )}
                 </div>
@@ -192,16 +286,23 @@ export function Inventory() {
         })}
       </div>
 
+      {/* ── MODAL ──────────────────────────────────────────────────── */}
       {showModal && modalData && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-50">
           <div className="bg-card rounded-2xl p-8 max-w-md w-full shadow-xl border-2 border-border">
             <h2 className="text-2xl mb-2">
-              {modalData.action === "add" ? "Add Stock" : "Remove Stock"}
+              {modalData.action === "add"
+                ? "Add Stock"
+                : modalData.action === "remove"
+                ? "Remove Stock"
+                : "Update Price"}
             </h2>
             <p className="text-muted-foreground mb-6">{modalData.productName}</p>
 
             <label htmlFor="amount-input" className="block mb-3 text-foreground">
-              Enter amount ({modalData.unit.toLowerCase()}):
+              {modalData.action === "pricePerLiter"
+                ? `New price per ${modalData.unit.toLowerCase()} (₹):`
+                : `Enter amount (${modalData.unit.toLowerCase()}):`}
             </label>
             <input
               id="amount-input"
@@ -210,7 +311,7 @@ export function Inventory() {
               value={inputAmount}
               onChange={(e) => setInputAmount(e.target.value)}
               className="w-full px-6 py-4 text-2xl rounded-xl border-2 border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary mb-6"
-              placeholder="0"
+              placeholder={modalData.action === "pricePerLiter" ? "0.00" : "0"}
               autoFocus
             />
 

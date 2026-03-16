@@ -420,8 +420,17 @@ export async function updateOrderItem(
   return mapOrderItem(data);
 }
 
+export async function updateProductUnitPrice(id: string, unitPrice: number): Promise<Product> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { data, error } = await supabase.from('products').update({ unit_price: unitPrice })
+    .eq('id', id).select().single();
+  if (error) throw error
+  return mapProduct(data);
+}
+
 export async function deleteOrderItem(id: string): Promise<void> {
   if (!supabase) throw new Error("Supabase not configured");
   const { error } = await supabase.from("order_items").delete().eq("id", id);
   if (error) throw error;
 }
+
