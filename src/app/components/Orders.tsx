@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React,{ useState, useEffect } from "react";
 import { Link } from "react-router";
 import { getOrders, getProducts } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
@@ -6,7 +6,7 @@ import { getCachedOrders, getCachedProducts, setCachedOrders, setCachedProducts 
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Order, Product } from "../../lib/types";
 import { orders as mockOrders, products as mockProducts } from "../data/mockData";
-import { Plus, Calendar, User, Package as PackageIcon, LayoutGrid, List, ArrowUpDown, Search, DollarSign } from "lucide-react";
+import { Plus, Calendar, User, Package as PackageIcon, LayoutGrid, List, ArrowUpDown, Search, IndianRupee } from "lucide-react";
 
 type ViewMode = "card" | "list";
 type SortOrder = "recent" | "oldest";
@@ -241,8 +241,8 @@ export function Orders() {
                 </div>
 
                 <div className="flex items-center gap-3 mb-3">
-                  <DollarSign className="h-6 w-6 text-primary" />
-                  <span className="text-xl text-foreground font-medium">${total.toFixed(2)}</span>
+                  <IndianRupee className="h-6 w-6 text-primary" />
+                  <span className="text-xl text-foreground font-medium">{total.toFixed(2)} INR</span>
                 </div>
 
                 {order.notes && (
@@ -284,7 +284,7 @@ export function Orders() {
                     {getProductName(order.productId)} ({order.quantity}L)
                   </span>
                   <span className="whitespace-nowrap font-medium text-foreground">
-                    ${total.toFixed(2)}
+                    {total.toFixed(2)} INR
                   </span>
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">

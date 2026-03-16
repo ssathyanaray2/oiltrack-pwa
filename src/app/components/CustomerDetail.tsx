@@ -7,6 +7,7 @@ import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Customer, Order, Product } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders, products as mockProducts } from "../data/mockData";
 import { ArrowLeft, User, Phone, MapPin, Mail, Calendar, Package as PackageIcon, Pencil } from "lucide-react";
+import React from "react";
 
 export function CustomerDetail() {
   const { id } = useParams();

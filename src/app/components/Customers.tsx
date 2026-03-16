@@ -7,6 +7,7 @@ import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Customer, Order } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders } from "../data/mockData";
 import { User, Phone, MapPin, Mail, Plus, ShoppingBag } from "lucide-react";
+import React from "react";
 
 export function Customers() {
   const isOnline = useOnlineStatus();

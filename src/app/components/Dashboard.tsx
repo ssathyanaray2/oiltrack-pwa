@@ -6,7 +6,7 @@ import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, getCachedOrders, getCachedDashboard, setCachedProducts, setCachedOrders, setCachedDashboard } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Product, Order } from "../../lib/types";
-import { TrendingUp, DollarSign, ShoppingCart, AlertTriangle } from "lucide-react";
+import { TrendingUp, IndianRupee, ShoppingCart, AlertTriangle } from "lucide-react";
 import { Link } from "react-router";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -132,7 +132,7 @@ export function Dashboard() {
         <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
           <div className="flex items-center gap-3 mb-2">
             <div className="bg-primary/10 p-3 rounded-xl">
-              <DollarSign className="h-7 w-7 text-primary" />
+              <IndianRupee className="h-7 w-7 text-primary" />
             </div>
             <h3 className="text-muted-foreground">Total Revenue (Current Orders)</h3>
           </div>

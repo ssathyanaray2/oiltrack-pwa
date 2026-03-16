@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from "react-router";
 import { Home, Package, ShoppingCart, Users, WifiOff } from "lucide-react";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
+import React from "react";
 
 export function Root() {
   const location = useLocation();
