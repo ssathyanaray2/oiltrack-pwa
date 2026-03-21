@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { getCustomer, createCustomer, updateCustomer } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedCustomers, setCachedCustomers } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
+import { offlineCustomersDB } from "../../lib/db";
 import type { Customer } from "../../lib/types";
 import { customers as mockCustomers } from "../data/mockData";
 
@@ -86,7 +87,23 @@ export function CustomerForm() {
     }
 
     if (!isSupabaseConfigured() || !isOnline) {
-      toast.success(isEditing ? "Customer updated (saved locally)." : `Customer "${formData.name}" added (saved locally).`);
+      await offlineCustomersDB.put({
+        id: `offline-customer-${Date.now()}`,
+        name: formData.name.trim(),
+        phone: formData.phone.trim(),
+        address: formData.address.trim(),
+        email: formData.email.trim(),
+        maps_link: formData.maps_link.trim(),
+        createdAt: new Date().toISOString(),
+        isEdit: isEditing,
+        originalId: id ?? "",
+      });
+      toast.success(
+        isEditing
+          ? `Changes to "${formData.name}" saved. Will sync when back online.`
+          : `"${formData.name}" saved. Will sync when back online.`,
+        { duration: 5000 }
+      );
       navigate("/customers");
       return;
     }
@@ -138,6 +155,15 @@ export function CustomerForm() {
 
   return (
     <div className="p-6 pb-24 max-w-2xl mx-auto">
+      {!isOnline && (
+        <div className="bg-accent/20 border-2 border-accent rounded-2xl p-4 mb-6 flex items-center gap-3">
+          <WifiOff className="h-6 w-6 text-accent-foreground flex-shrink-0" />
+          <div>
+            <p className="font-medium text-accent-foreground">You're offline</p>
+            <p className="text-sm text-foreground">Customer will be saved locally and synced automatically when you're back online</p>
+          </div>
+        </div>
+      )}
       <button
         onClick={() => navigate("/customers")}
         className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"

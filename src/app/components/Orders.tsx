@@ -4,9 +4,11 @@ import { getOrders, getProducts } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, setCachedOrders, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
+import { offlineOrdersDB, type OfflineOrder } from "../../lib/db";
+import { SYNC_COMPLETE_EVENT } from "../hooks/useOfflineSync";
 import type { Order, Product } from "../../lib/types";
 import { orders as mockOrders, products as mockProducts } from "../data/mockData";
-import { Plus, Calendar, User, Package as PackageIcon, LayoutGrid, List, ArrowUpDown, Search, IndianRupee } from "lucide-react";
+import { Plus, Calendar, User, Package as PackageIcon, LayoutGrid, List, ArrowUpDown, Search, IndianRupee, Clock } from "lucide-react";
 
 type ViewMode = "card" | "list";
 type SortOrder = "recent" | "oldest";
@@ -16,11 +18,22 @@ export function Orders() {
   const isOnline = useOnlineStatus();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<OfflineOrder[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const loadPending = () =>
+    offlineOrdersDB.getAll().then(setPendingOrders).catch(console.error);
   const [viewMode, setViewMode] = useState<ViewMode>("card");
   const [sortOrder, setSortOrder] = useState<SortOrder>("recent");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Load pending IDB orders on mount and after each sync
+  useEffect(() => {
+    loadPending();
+    window.addEventListener(SYNC_COMPLETE_EVENT, loadPending);
+    return () => window.removeEventListener(SYNC_COMPLETE_EVENT, loadPending);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -132,6 +145,40 @@ export function Orders() {
         <Plus className="h-7 w-7" />
         <span className="text-xl">New Order</span>
       </Link>
+
+      {pendingOrders.length > 0 && (
+        <div className="mb-6 space-y-3">
+          <div className="flex items-center gap-2 text-accent-foreground">
+            <Clock className="h-4 w-4" />
+            <span className="text-sm font-medium">
+              {pendingOrders.length} order{pendingOrders.length > 1 ? "s" : ""} pending sync
+            </span>
+          </div>
+          {pendingOrders.map((order) => {
+            const firstItem = order.items[0];
+            const product = products.find((p) => p.id === firstItem?.productId);
+            return (
+              <div
+                key={order.id}
+                className="bg-accent/10 border-2 border-accent rounded-xl p-4"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-medium truncate">{order.customerName}</h3>
+                  <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-lg whitespace-nowrap ml-2 flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Pending sync
+                  </span>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {order.items.length === 1
+                    ? `${product?.name ?? "Unknown"} — ${firstItem?.quantity} L`
+                    : `${order.items.length} items`}
+                  {" · "}{order.date}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mb-6">
         <div className="relative">

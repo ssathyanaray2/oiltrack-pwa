@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Wifi, Plus, X } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
-import { useOfflineStorage, useOnlineStatus } from "../hooks/useOfflineStorage";
+import { useOnlineStatus } from "../hooks/useOfflineStorage";
+import { offlineOrdersDB } from "../../lib/db";
 import {
   getOrder,
   getOrders,
@@ -44,10 +45,6 @@ export function OrderForm() {
   });
 
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([{ productId: "", quantity: "" }]);
-
-  const [offlineOrders, setOfflineOrders] = useOfflineStorage<
-    Array<typeof formData & { items: OrderItemRow[]; id?: string; createdAt?: string; offline?: boolean }>
-  >("offline-orders", []);
 
   useEffect(() => {
     const load = async () => {
@@ -317,17 +314,18 @@ Total,$${getOrderTotal().toFixed(2)}
     }));
 
     if (!isOnline && !isEditing) {
-      setOfflineOrders([
-        ...offlineOrders,
-        {
-          ...formData,
-          items: orderItems,
-          id: `offline-${Date.now()}`,
-          createdAt: new Date().toISOString(),
-          offline: true,
-        },
-      ]);
-      toast.success("Order saved locally. It will sync when you're back online.", { duration: 5000 });
+      await offlineOrdersDB.put({
+        id: `offline-${Date.now()}`,
+        customerId: formData.customerId,
+        customerName: formData.customerName,
+        date: formData.date,
+        status: formData.status,
+        paymentStatus: formData.paymentStatus,
+        notes: formData.notes,
+        items: orderItems,
+        createdAt: new Date().toISOString(),
+      });
+      toast.success("Order saved. It will sync automatically when you're back online.", { duration: 5000 });
       navigate("/orders");
       return;
     }
@@ -404,36 +402,6 @@ Total,$${getOrderTotal().toFixed(2)}
     }
   };
 
-  const handleSyncOfflineOrders = async () => {
-    if (!isSupabaseConfigured() || offlineOrders.length === 0) {
-      setOfflineOrders([]);
-      return;
-    }
-    try {
-      for (const o of offlineOrders) {
-        const items = o.items?.map((i) => ({ productId: i.productId, quantity: parseInt(i.quantity, 10) })).filter((i) => !isNaN(i.quantity) && i.quantity > 0);
-        if (!items?.length || !o.customerId) continue;
-        await createOrder({
-          customerId: o.customerId,
-          customerName: o.customerName,
-          productId: items[0].productId,
-          quantity: items[0].quantity,
-          date: o.date,
-          status: o.status,
-          paymentStatus: o.paymentStatus,
-          notes: o.notes || undefined,
-          items,
-        });
-      }
-      const fresh = await getOrders();
-      setCachedOrders(fresh);
-      setOfflineOrders([]);
-      toast.success("Offline orders synced successfully!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Some orders failed to sync");
-    }
-  };
 
   if (loading && isEditing) {
     return (
@@ -464,23 +432,6 @@ Total,$${getOrderTotal().toFixed(2)}
         </div>
       )}
 
-      {isOnline && offlineOrders.length > 0 && (
-        <div className="bg-primary/10 border-2 border-primary rounded-2xl p-4 mb-6 flex items-center gap-3">
-          <Wifi className="h-6 w-6 text-primary" />
-          <div className="flex-1">
-            <p className="font-medium text-primary">You're back online</p>
-            <p className="text-sm text-foreground">
-              {offlineOrders.length} offline {offlineOrders.length === 1 ? "order" : "orders"} ready to sync
-            </p>
-          </div>
-          <button
-            onClick={handleSyncOfflineOrders}
-            className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm"
-          >
-            Sync Now
-          </button>
-        </div>
-      )}
 
       <div className="mb-8">
         <button

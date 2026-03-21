@@ -4,9 +4,11 @@ import { getCustomers, getOrders } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedCustomers, getCachedOrders, setCachedCustomers, setCachedOrders } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
+import { offlineCustomersDB, type OfflineCustomer } from "../../lib/db";
+import { SYNC_COMPLETE_EVENT } from "../hooks/useOfflineSync";
 import type { Customer, Order } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders } from "../data/mockData";
-import { User, Phone, MapPin, Mail, Plus, ShoppingBag } from "lucide-react";
+import { User, Phone, MapPin, Mail, Plus, ShoppingBag, Clock } from "lucide-react";
 import React from "react";
 import { formatMapsLink } from "../../lib/utils";
 
@@ -14,7 +16,17 @@ export function Customers() {
   const isOnline = useOnlineStatus();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [pendingCustomers, setPendingCustomers] = useState<OfflineCustomer[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const loadPending = () =>
+    offlineCustomersDB.getAll().then(setPendingCustomers).catch(console.error);
+
+  useEffect(() => {
+    loadPending();
+    window.addEventListener(SYNC_COMPLETE_EVENT, loadPending);
+    return () => window.removeEventListener(SYNC_COMPLETE_EVENT, loadPending);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -86,6 +98,35 @@ export function Customers() {
         <Plus className="h-7 w-7" />
         <span className="text-xl">Add Customer</span>
       </Link>
+
+      {pendingCustomers.length > 0 && (
+        <div className="mb-6 space-y-3">
+          <div className="flex items-center gap-2 text-accent-foreground">
+            <Clock className="h-4 w-4" />
+            <span className="text-sm font-medium">
+              {pendingCustomers.length} customer{pendingCustomers.length > 1 ? "s" : ""} pending sync
+            </span>
+          </div>
+          {pendingCustomers.map((customer) => (
+            <div
+              key={customer.id}
+              className="bg-accent/10 border-2 border-accent rounded-xl p-4 flex items-center gap-3"
+            >
+              <div className="bg-accent/20 p-2 rounded-lg">
+                <User className="h-5 w-5 text-accent-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">{customer.name}</p>
+                <p className="text-sm text-muted-foreground truncate">{customer.phone}</p>
+              </div>
+              <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-lg whitespace-nowrap flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {customer.isEdit ? "Edit pending" : "New — pending sync"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="space-y-4">
         {customers.map((customer) => {
