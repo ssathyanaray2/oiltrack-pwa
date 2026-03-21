@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Minus, Package, AlertTriangle, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { getProducts, updateProductStock, updateProductUnitPrice, updateProductSellingPrice } from "../../lib/api";
+import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
@@ -18,7 +18,7 @@ export function Inventory() {
     productId: string;
     productName: string;
     unit: string;
-    action: "add" | "remove" | "pricePerLiter" | "sellingPrice";
+    action: "add" | "remove" | "pricePerLiter" | "costPrice";
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
 
@@ -50,7 +50,7 @@ export function Inventory() {
     productId: string,
     productName: string,
     unit: string,
-    action: "add" | "remove" | "pricePerLiter" | "sellingPrice"
+    action: "add" | "remove" | "pricePerLiter" | "costPrice"
   ) => {
     setModalData({ productId, productName, unit, action });
     setInputAmount("");
@@ -105,8 +105,8 @@ export function Inventory() {
       return;
     }
 
-    // ── SELLING PRICE UPDATE ────────────────────────────────────────
-    if (modalData.action === "sellingPrice") {
+    // ── COST PRICE UPDATE ───────────────────────────────────────────
+    if (modalData.action === "costPrice") {
       const newPrice = parseFloat(inputAmount);
       if (isNaN(newPrice) || newPrice <= 0) {
         toast.error("Please enter a valid price");
@@ -114,25 +114,25 @@ export function Inventory() {
       }
       if (isSupabaseConfigured() && isOnline) {
         try {
-          const updated = await updateProductSellingPrice(modalData.productId, newPrice);
+          const updated = await updateProductCostPrice(modalData.productId, newPrice);
           setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
           setCachedProducts(
             products.map((p) =>
-              p.id === modalData.productId ? { ...p, sellingPrice: newPrice } : p
+              p.id === modalData.productId ? { ...p, costPrice: newPrice } : p
             )
           );
-          toast.success(`Selling price updated to ₹${newPrice} for ${modalData.productName}`);
+          toast.success(`Cost price updated to ₹${newPrice} for ${modalData.productName}`);
         } catch (e) {
-          toast.error("Failed to update selling price");
+          toast.error("Failed to update cost price");
           console.error(e);
         }
       } else {
         const next = products.map((p) =>
-          p.id === modalData.productId ? { ...p, sellingPrice: newPrice } : p
+          p.id === modalData.productId ? { ...p, costPrice: newPrice } : p
         );
         setProducts(next);
         setCachedProducts(next);
-        toast.success(`Selling price updated to ₹${newPrice} (saved locally)`);
+        toast.success(`Cost price updated to ₹${newPrice} (saved locally)`);
       }
       closeModal();
       return;
@@ -254,13 +254,13 @@ export function Inventory() {
               key={product.id}
               className={`relative bg-card rounded-2xl p-6 shadow-md border-2 ${stockStatus.borderColor}`}
             >
-              {/* Selling price — top-right corner */}
+              {/* Cost price — top-right corner */}
               <button
-                onClick={() => openModal(product.id, product.name, product.unit, "sellingPrice")}
+                onClick={() => openModal(product.id, product.name, product.unit, "costPrice")}
                 className="absolute top-4 right-4 flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg px-2.5 py-1 text-sm font-medium transition-colors group"
-                title="Tap to edit selling price"
+                title="Tap to edit cost price"
               >
-                <span>CP: ₹{product.sellingPrice}</span>
+                <span>CP: ₹{product.costPrice}</span>
                 <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
 
@@ -337,17 +337,17 @@ export function Inventory() {
                 ? "Add Stock"
                 : modalData.action === "remove"
                 ? "Remove Stock"
-                : modalData.action === "sellingPrice"
-                ? "Update Selling Price"
-                : "Update Cost Price"}
+                : modalData.action === "costPrice"
+                ? "Update Cost Price"
+                : "Update Selling Price"}
             </h2>
             <p className="text-muted-foreground mb-6">{modalData.productName}</p>
 
             <label htmlFor="amount-input" className="block mb-3 text-foreground">
               {modalData.action === "pricePerLiter"
                 ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
-                : modalData.action === "sellingPrice"
-                ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
+                : modalData.action === "costPrice"
+                ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
                 : `Enter amount (${modalData.unit.toLowerCase()}):`}
             </label>
             <input
@@ -357,7 +357,7 @@ export function Inventory() {
               value={inputAmount}
               onChange={(e) => setInputAmount(e.target.value)}
               className="w-full px-6 py-4 text-2xl rounded-xl border-2 border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary mb-6"
-              placeholder={modalData.action === "pricePerLiter" || modalData.action === "sellingPrice" ? "0.00" : "0"}
+              placeholder={modalData.action === "pricePerLiter" || modalData.action === "costPrice" ? "0.00" : "0"}
               autoFocus
             />
 

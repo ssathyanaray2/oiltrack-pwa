@@ -5,7 +5,7 @@ export interface Product {
   unit: string;
   lowStockThreshold: number;
   pricePerLiter: number;
-  sellingPrice: number;
+  costPrice: number;
 }
 
 export interface Customer {
@@ -40,11 +40,11 @@ export interface InventoryData {
 }
 
 export const products: Product[] = [
-  { id: "1", name: "Vegetable Oil", stock: 450, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 3.50, sellingPrice: 0 },
-  { id: "2", name: "Olive Oil", stock: 180, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 8.00, sellingPrice: 0 },
-  { id: "3", name: "Sunflower Oil", stock: 320, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 4.25, sellingPrice: 0 },
-  { id: "4", name: "Coconut Oil", stock: 150, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 6.75, sellingPrice: 0 },
-  { id: "5", name: "Palm Oil", stock: 280, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 3.80, sellingPrice: 0 },
+  { id: "1", name: "Vegetable Oil", stock: 450, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 3.50, costPrice: 0 },
+  { id: "2", name: "Olive Oil", stock: 180, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 8.00, costPrice: 0 },
+  { id: "3", name: "Sunflower Oil", stock: 320, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 4.25, costPrice: 0 },
+  { id: "4", name: "Coconut Oil", stock: 150, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 6.75, costPrice: 0 },
+  { id: "5", name: "Palm Oil", stock: 280, unit: "Liters", lowStockThreshold: 200, pricePerLiter: 3.80, costPrice: 0 },
 ];
 
 export const customers: Customer[] = [
