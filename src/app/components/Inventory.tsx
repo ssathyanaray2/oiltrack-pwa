@@ -260,7 +260,7 @@ export function Inventory() {
                 className="absolute top-4 right-4 flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg px-2.5 py-1 text-sm font-medium transition-colors group"
                 title="Tap to edit selling price"
               >
-                <span>SP: ₹{product.sellingPrice}</span>
+                <span>CP: ₹{product.sellingPrice}</span>
                 <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
 
