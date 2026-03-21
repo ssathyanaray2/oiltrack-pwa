@@ -27,6 +27,7 @@ export interface Order {
   status: "Pending" | "Delivered" | "Cancelled";
   paymentStatus: "Paid" | "Unpaid" | "Partial";
   notes?: string;
+  items?: Array<{ productId: string; quantity: number }>;
 }
 
 export interface OrderItem {

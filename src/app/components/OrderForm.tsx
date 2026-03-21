@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Wifi } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Wifi, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
-import { Plus } from "lucide-react";
 import { useOfflineStorage, useOnlineStatus } from "../hooks/useOfflineStorage";
 import {
   getOrder,
@@ -13,12 +12,16 @@ import {
   createOrder,
   updateOrder,
   deleteOrder,
-  updateProduct,
 } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, getCachedCustomers, setCachedOrders, setCachedProducts, setCachedCustomers } from "../../lib/cache";
 import type { Order, Product, Customer } from "../../lib/types";
 import { orders as mockOrders, products as mockProducts, customers as mockCustomers } from "../data/mockData";
+
+interface OrderItemRow {
+  productId: string;
+  quantity: string;
+}
 
 export function OrderForm() {
   const navigate = useNavigate();
@@ -34,15 +37,17 @@ export function OrderForm() {
   const [formData, setFormData] = useState({
     customerId: "",
     customerName: "",
-    productId: "",
-    quantity: "",
     date: new Date().toISOString().split("T")[0],
     status: "Pending" as Order["status"],
     paymentStatus: "Unpaid" as Order["paymentStatus"],
     notes: "",
   });
 
-  const [offlineOrders, setOfflineOrders] = useOfflineStorage<Array<typeof formData & { id?: string; createdAt?: string; offline?: boolean }>>("offline-orders", []);
+  const [orderItems, setOrderItems] = useState<OrderItemRow[]>([{ productId: "", quantity: "" }]);
+
+  const [offlineOrders, setOfflineOrders] = useOfflineStorage<
+    Array<typeof formData & { items: OrderItemRow[]; id?: string; createdAt?: string; offline?: boolean }>
+  >("offline-orders", []);
 
   useEffect(() => {
     const load = async () => {
@@ -61,13 +66,15 @@ export function OrderForm() {
               setFormData({
                 customerId: order.customerId,
                 customerName: order.customerName,
-                productId: order.productId,
-                quantity: order.quantity.toString(),
                 date: order.date,
                 status: order.status,
                 paymentStatus: order.paymentStatus,
                 notes: order.notes ?? "",
               });
+              const items = order.items && order.items.length > 0
+                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString() }))
+                : [{ productId: order.productId, quantity: order.quantity.toString() }];
+              setOrderItems(items);
             }
           }
         } catch (e) {
@@ -80,18 +87,21 @@ export function OrderForm() {
           if (isEditing && id) {
             const order = (co ?? mockOrders).find((o) => o.id === id) ?? null;
             setExistingOrder(order);
-            if (order)
+            if (order) {
               setFormData({
                 customerId: order.customerId,
                 customerName: order.customerName,
-                productId: order.productId,
-                quantity: order.quantity.toString(),
                 date: order.date,
                 status: order.status,
                 paymentStatus: order.paymentStatus,
                 notes: order.notes ?? "",
               });
+              const items = order.items && order.items.length > 0
+                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString() }))
+                : [{ productId: order.productId, quantity: order.quantity.toString() }];
+              setOrderItems(items);
             }
+          }
         } finally {
           setLoading(false);
         }
@@ -104,17 +114,20 @@ export function OrderForm() {
         if (isEditing && id) {
           const order = (co ?? mockOrders).find((o) => o.id === id) ?? null;
           setExistingOrder(order);
-          if (order)
+          if (order) {
             setFormData({
               customerId: order.customerId,
               customerName: order.customerName,
-              productId: order.productId,
-              quantity: order.quantity.toString(),
               date: order.date,
               status: order.status,
               paymentStatus: order.paymentStatus,
               notes: order.notes ?? "",
             });
+            const items = order.items && order.items.length > 0
+              ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString() }))
+              : [{ productId: order.productId, quantity: order.quantity.toString() }];
+            setOrderItems(items);
+          }
         }
         setLoading(false);
       }
@@ -132,21 +145,46 @@ export function OrderForm() {
 
   const handleCustomerChange = (customerId: string) => {
     const customer = customers.find((c) => c.id === customerId);
-    setFormData({
-      ...formData,
-      customerId,
-      customerName: customer?.name ?? "",
-    });
+    setFormData({ ...formData, customerId, customerName: customer?.name ?? "" });
+  };
+
+  const addItem = () => {
+    setOrderItems([...orderItems, { productId: "", quantity: "" }]);
+  };
+
+  const removeItem = (index: number) => {
+    setOrderItems(orderItems.filter((_, i) => i !== index));
+  };
+
+  const updateItem = (index: number, field: keyof OrderItemRow, value: string) => {
+    setOrderItems(orderItems.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  };
+
+  const getOrderTotal = () => {
+    return orderItems.reduce((sum, item) => {
+      const product = products.find((p) => p.id === item.productId);
+      const qty = parseInt(item.quantity || "0", 10);
+      return sum + (product?.pricePerLiter ?? 0) * qty;
+    }, 0);
   };
 
   const handlePrint = () => {
-    const product = products.find((p) => p.id === formData.productId);
     const customer = customers.find((c) => c.id === formData.customerId);
-    if (!product || !customer) {
+    if (!customer || orderItems.some((i) => !i.productId || !i.quantity)) {
       toast.error("Missing product or customer information");
       return;
     }
-    const total = product.pricePerLiter * parseInt(formData.quantity || "0");
+    const itemRows = orderItems.map((item) => {
+      const product = products.find((p) => p.id === item.productId);
+      const qty = parseInt(item.quantity || "0", 10);
+      return `
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #D4A574;">${product?.name ?? ""}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">${qty} L</td>
+          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">$${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L</td>
+          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">$${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}</td>
+        </tr>`;
+    }).join("");
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -158,6 +196,9 @@ export function OrderForm() {
             .header { border-bottom: 3px solid #C87D3A; padding-bottom: 20px; margin-bottom: 30px; }
             .info-row { margin: 15px 0; font-size: 16px; }
             .label { font-weight: bold; color: #3D2817; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { background: #3D2817; color: white; padding: 10px; text-align: left; }
+            th:not(:first-child) { text-align: right; }
             .total { font-size: 24px; font-weight: bold; color: #C87D3A; margin-top: 30px; padding-top: 20px; border-top: 2px solid #D4A574; }
             .footer { margin-top: 40px; font-size: 14px; color: #6B5444; }
           </style>
@@ -171,16 +212,22 @@ export function OrderForm() {
           <div class="info-row"><span class="label">Delivery Address:</span> ${customer.address}</div>
           <div class="info-row"><span class="label">Phone:</span> ${customer.phone}</div>
           ${customer.email ? `<div class="info-row"><span class="label">Email:</span> ${customer.email}</div>` : ""}
-          <div style="margin-top: 30px;">
-            <div class="info-row"><span class="label">Product:</span> ${product.name}</div>
-            <div class="info-row"><span class="label">Quantity:</span> ${formData.quantity} Liters</div>
-            <div class="info-row"><span class="label">Price per Liter:</span> $${product.pricePerLiter.toFixed(2)}</div>
-            <div class="info-row"><span class="label">Date:</span> ${new Date(formData.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</div>
-            <div class="info-row"><span class="label">Status:</span> ${formData.status}</div>
-            <div class="info-row"><span class="label">Payment Status:</span> ${formData.paymentStatus}</div>
-          </div>
-          ${formData.notes ? `<div class="info-row"><span class="label">Notes:</span> ${formData.notes}</div>` : ""}
-          <div class="total">TOTAL: $${total.toFixed(2)}</div>
+          <div class="info-row"><span class="label">Date:</span> ${new Date(formData.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</div>
+          <div class="info-row"><span class="label">Status:</span> ${formData.status}</div>
+          <div class="info-row"><span class="label">Payment Status:</span> ${formData.paymentStatus}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Price/L</th>
+                <th>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          ${formData.notes ? `<div class="info-row" style="margin-top:20px;"><span class="label">Notes:</span> ${formData.notes}</div>` : ""}
+          <div class="total">TOTAL: $${getOrderTotal().toFixed(2)}</div>
           <div class="footer">
             Thank you for your business!<br>
             Printed on ${new Date().toLocaleString()}
@@ -204,13 +251,16 @@ export function OrderForm() {
   };
 
   const handleExport = () => {
-    const product = products.find((p) => p.id === formData.productId);
     const customer = customers.find((c) => c.id === formData.customerId);
-    if (!product || !customer) {
+    if (!customer || orderItems.some((i) => !i.productId || !i.quantity)) {
       toast.error("Missing product or customer information");
       return;
     }
-    const total = product.pricePerLiter * parseInt(formData.quantity || "0");
+    const itemLines = orderItems.map((item, i) => {
+      const product = products.find((p) => p.id === item.productId);
+      const qty = parseInt(item.quantity || "0", 10);
+      return `Item ${i + 1},${product?.name ?? ""},${qty} Liters,$${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L,$${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}`;
+    }).join("\n");
     const csvContent = `Order Receipt
 Order ID,${id || "NEW"}
 
@@ -221,15 +271,16 @@ Phone,${customer.phone}
 Email,${customer.email || "N/A"}
 
 Order Details
-Product,${product.name}
-Quantity,${formData.quantity} Liters
-Price per Liter,$${product.pricePerLiter.toFixed(2)}
 Date,${formData.date}
 Status,${formData.status}
 Payment Status,${formData.paymentStatus}
 Notes,${formData.notes || "N/A"}
 
-Total,$${total.toFixed(2)}
+Items
+,Product,Quantity,Price/L,Subtotal
+${itemLines}
+
+Total,$${getOrderTotal().toFixed(2)}
 `;
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -244,22 +295,33 @@ Total,$${total.toFixed(2)}
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.customerName || !formData.productId || !formData.quantity) {
-      toast.error("Please fill in all required fields");
+    if (!formData.customerName) {
+      toast.error("Please select a customer");
       return;
+    }
+    for (let i = 0; i < orderItems.length; i++) {
+      if (!orderItems[i].productId) {
+        toast.error(`Please select a product for item ${i + 1}`);
+        return;
+      }
+      const qty = parseInt(orderItems[i].quantity, 10);
+      if (isNaN(qty) || qty <= 0) {
+        toast.error(`Please enter a valid quantity for item ${i + 1}`);
+        return;
+      }
     }
 
-    const qty = parseInt(formData.quantity, 10);
-    if (isNaN(qty) || qty <= 0) {
-      toast.error("Please enter a valid quantity");
-      return;
-    }
+    const parsedItems = orderItems.map((item) => ({
+      productId: item.productId,
+      quantity: parseInt(item.quantity, 10),
+    }));
 
     if (!isOnline && !isEditing) {
       setOfflineOrders([
         ...offlineOrders,
         {
           ...formData,
+          items: orderItems,
           id: `offline-${Date.now()}`,
           createdAt: new Date().toISOString(),
           offline: true,
@@ -277,43 +339,40 @@ Total,$${total.toFixed(2)}
     }
 
     try {
-      // Need to check if the product is available in stock
-      const product = products.find((p) => p.id === formData.productId);
-      if (!product) {
-        toast.error("Product not found");
-        return;
+      for (const item of parsedItems) {
+        const product = products.find((p) => p.id === item.productId);
+        if (!product) {
+          toast.error(`Product not found for item`);
+          return;
+        }
+        if (product.stock < item.quantity) {
+          toast.error(`Insufficient stock for ${product.name} (available: ${product.stock} L)`);
+          return;
+        }
       }
-      if (product.stock < qty) {
-        toast.error("Product not available in stock");
-        return;
-      }
-      // Update the product stock
-      // await updateProduct(formData.productId, {
-      //   stock: product.stock - qty,
-      // });
 
       if (isEditing && id) {
         await updateOrder(id, {
           customerId: formData.customerId,
           customerName: formData.customerName,
-          productId: formData.productId,
-          quantity: qty,
           date: formData.date,
           status: formData.status,
           paymentStatus: formData.paymentStatus,
           notes: formData.notes || undefined,
+          items: parsedItems,
         });
         toast.success("Order updated successfully!");
       } else {
         await createOrder({
           customerId: formData.customerId,
           customerName: formData.customerName,
-          productId: formData.productId,
-          quantity: qty,
+          productId: parsedItems[0].productId,
+          quantity: parsedItems[0].quantity,
           date: formData.date,
           status: formData.status,
           paymentStatus: formData.paymentStatus,
           notes: formData.notes || undefined,
+          items: parsedItems,
         });
         toast.success("Order created successfully!");
       }
@@ -352,17 +411,18 @@ Total,$${total.toFixed(2)}
     }
     try {
       for (const o of offlineOrders) {
-        const qty = parseInt(o.quantity, 10);
-        if (isNaN(qty) || qty <= 0 || !o.customerId || !o.productId) continue;
+        const items = o.items?.map((i) => ({ productId: i.productId, quantity: parseInt(i.quantity, 10) })).filter((i) => !isNaN(i.quantity) && i.quantity > 0);
+        if (!items?.length || !o.customerId) continue;
         await createOrder({
           customerId: o.customerId,
           customerName: o.customerName,
-          productId: o.productId,
-          quantity: qty,
+          productId: items[0].productId,
+          quantity: items[0].quantity,
           date: o.date,
           status: o.status,
           paymentStatus: o.paymentStatus,
           notes: o.notes || undefined,
+          items,
         });
       }
       const fresh = await getOrders();
@@ -456,6 +516,7 @@ Total,$${total.toFixed(2)}
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Customer */}
         <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
           <div className="flex items-center justify-between mb-3">
             <label htmlFor="customerId">Customer *</label>
@@ -485,43 +546,103 @@ Total,$${total.toFixed(2)}
           )}
         </div>
 
+        {/* Order Items */}
         <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
-          <label htmlFor="productId" className="block mb-3">Product *</label>
-          <select
-            id="productId"
-            value={formData.productId}
-            onChange={(e) => setFormData({ ...formData, productId: e.target.value })}
-            className="w-full px-5 py-4 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
-            required
-          >
-            <option value="">Select a product</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name} - ${product.pricePerLiter.toFixed(2)}/L
-              </option>
-            ))}
-          </select>
-        </div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold text-lg text-foreground">Oil Items *</h2>
+              <p className="text-sm text-muted-foreground">Select oil type and quantity for each item</p>
+            </div>
+            <button
+              type="button"
+              onClick={addItem}
+              className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl px-4 py-2.5 text-sm font-medium transition-colors active:scale-95"
+            >
+              <Plus className="h-4 w-4" />
+              Add Item
+            </button>
+          </div>
 
-        <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
-          <label htmlFor="quantity" className="block mb-3">Quantity (Liters) *</label>
-          <input
-            id="quantity"
-            type="number"
-            min="1"
-            value={formData.quantity}
-            onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-            placeholder="Enter quantity"
-            className="w-full px-5 py-4 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
-            required
-          />
-          {formData.productId && formData.quantity && (
-            <p className="mt-3 text-muted-foreground">
-              Total: ${(products.find((p) => p.id === formData.productId)?.pricePerLiter ?? 0) * parseInt(formData.quantity || "0", 10)}
-            </p>
+          <div className="space-y-4">
+            {orderItems.map((item, index) => {
+              const selectedProduct = products.find((p) => p.id === item.productId);
+              const qty = parseInt(item.quantity || "0", 10);
+              const subtotal = (selectedProduct?.pricePerLiter ?? 0) * qty;
+
+              return (
+                <div
+                  key={index}
+                  className="border-2 border-border rounded-xl p-4 bg-background"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Item {index + 1}
+                    </span>
+                    {index > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        className="flex items-center gap-1 text-destructive hover:text-destructive/80 text-sm transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <select
+                      value={item.productId}
+                      onChange={(e) => updateItem(index, "productId", e.target.value)}
+                      className="w-full px-4 py-3 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      required
+                    >
+                      <option value="">Select oil type</option>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name} — ${product.pricePerLiter.toFixed(2)}/L
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => updateItem(index, "quantity", e.target.value)}
+                        placeholder="Quantity (L)"
+                        className="flex-1 px-4 py-3 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                        required
+                      />
+                      {item.productId && item.quantity && (
+                        <div className="text-right min-w-[90px]">
+                          <p className="text-xs text-muted-foreground">Subtotal</p>
+                          <p className="font-semibold text-foreground">${subtotal.toFixed(2)}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedProduct && (
+                      <p className="text-xs text-muted-foreground">
+                        Stock available: {selectedProduct.stock} L
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {orderItems.some((i) => i.productId && i.quantity) && (
+            <div className="mt-4 pt-4 border-t-2 border-border flex items-center justify-between">
+              <span className="font-semibold text-foreground">Order Total</span>
+              <span className="text-xl font-bold text-primary">${getOrderTotal().toFixed(2)}</span>
+            </div>
           )}
         </div>
 
+        {/* Date */}
         <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
           <label htmlFor="date" className="block mb-3">Date *</label>
           <input

@@ -27,19 +27,24 @@ function mapCustomer(row: Record<string, unknown>): Customer {
 /** Map DB rows to Order (schema: order_date, customer_name, payment_status) */
 function mapOrder(
   orderRow: Record<string, unknown>,
-  itemRow: Record<string, unknown> | null,
+  itemRows: Record<string, unknown>[],
   customerName: string
 ): Order {
+  const firstItem = itemRows[0] ?? null;
   return {
     id: String(orderRow.id),
     customerId: orderRow.customer_id != null ? String(orderRow.customer_id) : "",
     customerName: (orderRow.customer_name != null ? String(orderRow.customer_name) : "") || customerName,
-    productId: itemRow?.product_id != null ? String(itemRow.product_id) : "",
-    quantity: itemRow ? Number(itemRow.quantity) : 0,
+    productId: firstItem?.product_id != null ? String(firstItem.product_id) : "",
+    quantity: firstItem ? Number(firstItem.quantity) : 0,
     date: String(orderRow.order_date ?? orderRow.date ?? new Date().toISOString().slice(0, 10)),
     status: (orderRow.status as Order["status"]) ?? "Pending",
     paymentStatus: (orderRow.payment_status as Order["paymentStatus"]) ?? "Unpaid",
     notes: orderRow.notes != null ? String(orderRow.notes) : undefined,
+    items: itemRows.map((item) => ({
+      productId: String(item.product_id),
+      quantity: Number(item.quantity),
+    })),
   };
 }
 
@@ -196,14 +201,15 @@ export async function getOrders(): Promise<Order[]> {
     (customersData ?? []).forEach((c) => customerMap.set(c.id, c.name));
   }
 
-  const itemsByOrder = new Map<string, (typeof itemsData)[0]>();
+  const itemsByOrder = new Map<string, (typeof itemsData)[0][]>();
   for (const item of itemsData ?? []) {
-    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, item);
+    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
+    itemsByOrder.get(item.order_id)!.push(item);
   }
 
   return ordersData.map((o) => {
     const customerName = o.customer_name ?? customerMap.get(o.customer_id) ?? "";
-    return mapOrder(o, itemsByOrder.get(o.id) ?? null, customerName);
+    return mapOrder(o, itemsByOrder.get(o.id) ?? [], customerName);
   });
 }
 
@@ -221,14 +227,13 @@ export async function getOrder(id: string): Promise<Order | null> {
   const { data: itemsData } = await supabase
     .from("order_items")
     .select("*")
-    .eq("order_id", id)
-    .limit(1);
-  const item = itemsData?.[0] ?? null;
+    .eq("order_id", id);
+  const items = itemsData ?? [];
   const customerName = orderData.customer_name ?? "";
   const nameFromCust = orderData.customer_id
     ? (await supabase.from("customers").select("name").eq("id", orderData.customer_id).single()).data?.name
     : null;
-  return mapOrder(orderData, item, customerName || nameFromCust || "");
+  return mapOrder(orderData, items, customerName || nameFromCust || "");
 }
 
 export async function createOrder(order: {
@@ -240,12 +245,26 @@ export async function createOrder(order: {
   status: Order["status"];
   paymentStatus: Order["paymentStatus"];
   notes?: string;
+  items?: Array<{ productId: string; quantity: number }>;
 }): Promise<Order> {
   if (!supabase) throw new Error("Supabase not configured");
 
-  const product = await getProduct(order.productId);
-  const unitPrice = product?.pricePerLiter ?? 0;
-  const totalAmount = order.quantity * unitPrice;
+  const itemList = order.items && order.items.length > 0
+    ? order.items
+    : [{ productId: order.productId, quantity: order.quantity }];
+
+  const productMap = new Map<string, Product>();
+  for (const item of itemList) {
+    if (!productMap.has(item.productId)) {
+      const p = await getProduct(item.productId);
+      if (p) productMap.set(item.productId, p);
+    }
+  }
+
+  const totalAmount = itemList.reduce((sum, item) => {
+    const p = productMap.get(item.productId);
+    return sum + item.quantity * (p?.pricePerLiter ?? 0);
+  }, 0);
 
   const orderPayload: Record<string, unknown> = {
     customer_id: order.customerId || null,
@@ -264,19 +283,23 @@ export async function createOrder(order: {
     .single();
   if (orderError) throw orderError;
 
-  const { error: itemError } = await supabase.from("order_items").insert({
-    order_id: orderRow.id,
-    product_id: order.productId,
-    product_name: product?.name ?? "",
-    quantity: order.quantity,
-    unit_price: unitPrice,
-  });
-  if (itemError) throw itemError;
-
-  if (order.status !== "Cancelled" && product) {
-    await updateProduct(order.productId, {
-      stock: Math.max(0, product.stock - order.quantity),
+  for (const item of itemList) {
+    const p = productMap.get(item.productId);
+    const { error: itemError } = await supabase.from("order_items").insert({
+      order_id: orderRow.id,
+      product_id: item.productId,
+      product_name: p?.name ?? "",
+      quantity: item.quantity,
+      unit_price: p?.pricePerLiter ?? 0,
     });
+    if (itemError) throw itemError;
+  }
+
+  if (order.status !== "Cancelled") {
+    for (const item of itemList) {
+      const p = productMap.get(item.productId);
+      if (p) await updateProduct(item.productId, { stock: Math.max(0, p.stock - item.quantity) });
+    }
   }
 
   return getOrder(orderRow.id) as Promise<Order>;
@@ -293,6 +316,7 @@ export async function updateOrder(
     status?: Order["status"];
     paymentStatus?: Order["paymentStatus"];
     notes?: string;
+    items?: Array<{ productId: string; quantity: number }>;
   }
 ): Promise<Order> {
   if (!supabase) throw new Error("Supabase not configured");
@@ -308,45 +332,68 @@ export async function updateOrder(
   if (input.customerId !== undefined) orderPayload.customer_id = input.customerId;
   if (input.customerName !== undefined) orderPayload.customer_name = input.customerName;
 
-  const productId = input.productId ?? existing.productId;
-  const quantity = input.quantity ?? existing.quantity;
-  const product = productId ? await getProduct(productId) : null;
+  const newItems = input.items && input.items.length > 0
+    ? input.items
+    : input.productId !== undefined || input.quantity !== undefined
+      ? [{ productId: input.productId ?? existing.productId, quantity: input.quantity ?? existing.quantity }]
+      : null;
 
-  const { data: items } = await supabase.from("order_items").select("*").eq("order_id", id);
-  const existingItem = items?.[0];
-  if (existingItem && product && (productId !== existing.productId || quantity !== existing.quantity)) {
-    orderPayload.total_amount = quantity * product.pricePerLiter;
+  if (newItems) {
+    // Restore stock for existing items
+    if (existing.status !== "Cancelled" && existing.items?.length) {
+      for (const item of existing.items) {
+        const prod = await getProduct(item.productId);
+        if (prod) await updateProduct(item.productId, { stock: prod.stock + item.quantity });
+      }
+    }
+
+    // Calculate new total
+    const productMap = new Map<string, Product>();
+    for (const item of newItems) {
+      if (!productMap.has(item.productId)) {
+        const p = await getProduct(item.productId);
+        if (p) productMap.set(item.productId, p);
+      }
+    }
+    orderPayload.total_amount = newItems.reduce((sum, item) => {
+      const p = productMap.get(item.productId);
+      return sum + item.quantity * (p?.pricePerLiter ?? 0);
+    }, 0);
+
+    // Replace all order items
+    await supabase.from("order_items").delete().eq("order_id", id);
+    for (const item of newItems) {
+      const p = productMap.get(item.productId);
+      await supabase.from("order_items").insert({
+        order_id: id,
+        product_id: item.productId,
+        product_name: p?.name ?? "",
+        quantity: item.quantity,
+        unit_price: p?.pricePerLiter ?? 0,
+      });
+    }
+
+    // Deduct stock for new items (unless cancelling)
+    const newStatus = input.status ?? existing.status;
+    if (newStatus !== "Cancelled") {
+      for (const item of newItems) {
+        const p = productMap.get(item.productId);
+        if (p) await updateProduct(item.productId, { stock: Math.max(0, p.stock - item.quantity) });
+      }
+    }
+  }
+
+  // Handle cancellation stock restore (when no items change but status changes to Cancelled)
+  if (!newItems && input.status === "Cancelled" && existing.status !== "Cancelled" && existing.items?.length) {
+    for (const item of existing.items) {
+      const prod = await getProduct(item.productId);
+      if (prod) await updateProduct(item.productId, { stock: prod.stock + item.quantity });
+    }
   }
 
   if (Object.keys(orderPayload).length > 0) {
     const { error } = await supabase.from("orders").update(orderPayload).eq("id", id);
     if (error) throw error;
-  }
-
-  if (existingItem && (productId !== existing.productId || quantity !== existing.quantity)) {
-    if (existing.status !== "Cancelled" && existing.productId && existing.quantity) {
-      const prod = await getProduct(existing.productId);
-      if (prod) await updateProduct(existing.productId, { stock: prod.stock + existing.quantity });
-    }
-    if (productId && (input.status === undefined || input.status !== "Cancelled") && product) {
-      await updateProduct(productId, { stock: Math.max(0, product.stock - quantity) });
-    }
-    if (existingItem.id && product) {
-      await supabase
-        .from("order_items")
-        .update({
-          product_id: productId,
-          product_name: product.name,
-          quantity,
-          unit_price: product.pricePerLiter,
-        })
-        .eq("id", existingItem.id);
-    }
-  }
-
-  if (input.status === "Cancelled" && existing.status !== "Cancelled" && existing.productId) {
-    const prod = await getProduct(existing.productId);
-    if (prod) await updateProduct(existing.productId, { stock: prod.stock + existing.quantity });
   }
 
   return getOrder(id) as Promise<Order>;
