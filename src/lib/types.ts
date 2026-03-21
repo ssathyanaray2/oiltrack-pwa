@@ -6,6 +6,7 @@ export interface Product {
   unit: string;
   lowStockThreshold: number;
   pricePerLiter: number;
+  sellingPrice: number;
 }
 
 export interface Customer {

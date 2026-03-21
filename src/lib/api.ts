@@ -10,6 +10,7 @@ function mapProduct(row: Record<string, unknown>): Product {
     unit: String(row.unit),
     lowStockThreshold: Number(row.reorder_threshold),
     pricePerLiter: Number(row.unit_price),
+    sellingPrice: Number(row.selling_price ?? 0),
   };
 }
 
@@ -86,6 +87,7 @@ export async function createProduct(input: Omit<Product, "id">): Promise<Product
       unit: input.unit,
       reorder_threshold: input.lowStockThreshold,
       unit_price: input.pricePerLiter,
+      selling_price: input.sellingPrice ?? 0,
     })
     .select()
     .single();
@@ -104,6 +106,7 @@ export async function updateProduct(
   if (input.unit !== undefined) payload.unit = input.unit;
   if (input.lowStockThreshold !== undefined) payload.reorder_threshold = input.lowStockThreshold;
   if (input.pricePerLiter !== undefined) payload.unit_price = input.pricePerLiter;
+  if (input.sellingPrice !== undefined) payload.selling_price = input.sellingPrice;
   const { data, error } = await supabase.from("products").update(payload).eq("id", id).select().single();
   if (error) throw error;
   return mapProduct(data);
@@ -471,7 +474,15 @@ export async function updateProductUnitPrice(id: string, unitPrice: number): Pro
   if (!supabase) throw new Error("Supabase not configured");
   const { data, error } = await supabase.from('products').update({ unit_price: unitPrice })
     .eq('id', id).select().single();
-  if (error) throw error
+  if (error) throw error;
+  return mapProduct(data);
+}
+
+export async function updateProductSellingPrice(id: string, sellingPrice: number): Promise<Product> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { data, error } = await supabase.from('products').update({ selling_price: sellingPrice })
+    .eq('id', id).select().single();
+  if (error) throw error;
   return mapProduct(data);
 }
 
