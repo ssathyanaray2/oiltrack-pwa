@@ -21,6 +21,7 @@ export function Inventory() {
     action: "add" | "remove" | "pricePerLiter" | "costPrice";
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -61,11 +62,14 @@ export function Inventory() {
     setShowModal(false);
     setModalData(null);
     setInputAmount("");
+    setConfirming(false);
   };
 
   // ── CONFIRM HANDLER ───────────────────────────────────────────────
   const handleConfirm = async () => {
-    if (!modalData) return;
+    if (!modalData || confirming) return;
+    setConfirming(true);
+    try {
 
     // ── PRICE PER LITER UPDATE ──────────────────────────────────────
     if (modalData.action === "pricePerLiter") {
@@ -178,6 +182,9 @@ export function Inventory() {
       );
     }
     closeModal();
+    } finally {
+      setConfirming(false);
+    }
   };
 
   const getStockStatus = (stock: number, threshold: number) => {
@@ -364,15 +371,23 @@ export function Inventory() {
             <div className="flex gap-3">
               <button
                 onClick={closeModal}
-                className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 px-6 transition-colors active:scale-95"
+                disabled={confirming}
+                className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 px-6 transition-colors active:scale-95 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirm}
-                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 px-6 transition-colors active:scale-95"
+                disabled={confirming}
+                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 px-6 transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center gap-2"
               >
-                Confirm
+                {confirming && (
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                  </svg>
+                )}
+                {confirming ? "Saving…" : "Confirm"}
               </button>
             </div>
           </div>
