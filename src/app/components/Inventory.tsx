@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
-import { Plus, Minus, Package, AlertTriangle, Pencil } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
+import { extractPricesFromImage, type PriceChange } from "../../lib/priceAnalysis";
 import type { Product } from "../../lib/types";
 import { products as mockProducts } from "../data/mockData";
 import React from "react";
@@ -22,6 +23,13 @@ export function Inventory() {
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
   const [confirming, setConfirming] = useState(false);
+
+  // Price-update-from-image state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [priceChanges, setPriceChanges] = useState<PriceChange[]>([]);
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [applyingPrices, setApplyingPrices] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -187,6 +195,85 @@ export function Inventory() {
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = "";
+    if (!file) return;
+
+    const supported = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!supported.includes(file.type)) {
+      toast.error("Please upload a JPG, PNG, WebP, or GIF image");
+      return;
+    }
+
+    setAnalyzing(true);
+    toast.loading("Reading price list…", { id: "price-analysis" });
+
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]); // strip the data:image/...;base64, prefix
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const changes = await extractPricesFromImage(
+        base64,
+        file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+        products
+      );
+
+      toast.dismiss("price-analysis");
+
+      if (changes.length === 0) {
+        toast.info("No matching products or price changes found in the image");
+        return;
+      }
+
+      setPriceChanges(changes);
+      setShowPriceModal(true);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to analyse image — check your API key and try again", { id: "price-analysis" });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleApplyPrices = async () => {
+    setApplyingPrices(true);
+    try {
+      const changedOnly = priceChanges.filter((c) => c.newPrice !== c.currentPrice);
+      for (const change of changedOnly) {
+        if (isSupabaseConfigured() && isOnline) {
+          const updated = await updateProductUnitPrice(change.productId, change.newPrice);
+          setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        } else {
+          setProducts((prev) =>
+            prev.map((p) => (p.id === change.productId ? { ...p, pricePerLiter: change.newPrice } : p))
+          );
+        }
+      }
+      const next = products.map((p) => {
+        const change = changedOnly.find((c) => c.productId === p.id);
+        return change ? { ...p, pricePerLiter: change.newPrice } : p;
+      });
+      setCachedProducts(next);
+      toast.success(`Updated prices for ${changedOnly.length} product${changedOnly.length > 1 ? "s" : ""}`);
+      setShowPriceModal(false);
+      setPriceChanges([]);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to apply some price updates");
+    } finally {
+      setApplyingPrices(false);
+    }
+  };
+
   const getStockStatus = (stock: number, threshold: number) => {
     if (stock <= threshold * 0.5) {
       return {
@@ -224,8 +311,35 @@ export function Inventory() {
   return (
     <div className="p-6 pb-24 max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl text-foreground mb-2">Inventory</h1>
-        <p className="text-muted-foreground">Manage your stock levels</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl text-foreground mb-2">Inventory</h1>
+            <p className="text-muted-foreground">Manage your stock levels</p>
+          </div>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={analyzing}
+            className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl px-4 py-3 text-sm font-medium transition-colors active:scale-95 disabled:opacity-60 shrink-0"
+            title="Upload a price list image to auto-update selling prices"
+          >
+            {analyzing ? (
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+              </svg>
+            ) : (
+              <ImageUp className="h-4 w-4" />
+            )}
+            {analyzing ? "Analysing…" : "Update Prices"}
+          </button>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={handleImageUpload}
+        />
       </div>
 
       {lowStockProducts.length > 0 && (
@@ -388,6 +502,101 @@ export function Inventory() {
                   </svg>
                 )}
                 {confirming ? "Saving…" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PRICE UPDATE CONFIRMATION MODAL ──────────────────────── */}
+      {showPriceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-6 z-50 overflow-y-auto">
+          <div className="bg-card rounded-2xl w-full max-w-lg shadow-xl border-2 border-border my-6">
+            <div className="p-6 border-b border-border">
+              <h2 className="text-xl font-semibold text-foreground">Price Changes Detected</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Review the changes extracted from the image before applying
+              </p>
+            </div>
+
+            <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+              {priceChanges.map((change) => {
+                const diff = change.newPrice - change.currentPrice;
+                const pct = change.currentPrice > 0
+                  ? ((diff / change.currentPrice) * 100).toFixed(1)
+                  : "—";
+                const unchanged = diff === 0;
+                return (
+                  <div
+                    key={change.productId}
+                    className={`rounded-xl p-4 border-2 ${
+                      unchanged
+                        ? "border-border bg-muted/30"
+                        : diff > 0
+                        ? "border-destructive/30 bg-destructive/5"
+                        : "border-primary/30 bg-primary/5"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground truncate">{change.productName}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Found as: "{change.extractedName}"
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-muted-foreground line-through text-sm">
+                            ₹{change.currentPrice}
+                          </span>
+                          <span className="text-foreground font-semibold">
+                            ₹{change.newPrice}
+                          </span>
+                        </div>
+                        {!unchanged && (
+                          <div className={`flex items-center gap-1 justify-end text-xs mt-1 ${diff > 0 ? "text-destructive" : "text-primary"}`}>
+                            {diff > 0
+                              ? <TrendingUp className="h-3 w-3" />
+                              : <TrendingDown className="h-3 w-3" />}
+                            <span>{diff > 0 ? "+" : ""}{diff.toFixed(2)} ({pct}%)</span>
+                          </div>
+                        )}
+                        {unchanged && (
+                          <div className="flex items-center gap-1 justify-end text-xs mt-1 text-muted-foreground">
+                            <MinusIcon className="h-3 w-3" /> No change
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 border-t border-border text-sm text-muted-foreground">
+              {priceChanges.filter((c) => c.newPrice !== c.currentPrice).length} of {priceChanges.length} prices will change
+            </div>
+
+            <div className="p-4 flex gap-3">
+              <button
+                onClick={() => { setShowPriceModal(false); setPriceChanges([]); }}
+                disabled={applyingPrices}
+                className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 transition-colors active:scale-95 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyPrices}
+                disabled={applyingPrices || priceChanges.every((c) => c.newPrice === c.currentPrice)}
+                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 flex items-center justify-center gap-2 transition-colors active:scale-95 disabled:opacity-60"
+              >
+                {applyingPrices && (
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                  </svg>
+                )}
+                {applyingPrices ? "Applying…" : "Apply Changes"}
               </button>
             </div>
           </div>
