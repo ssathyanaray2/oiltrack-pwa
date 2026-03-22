@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon } from "lucide-react";
+import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
@@ -23,6 +23,8 @@ export function Inventory() {
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
   const [confirming, setConfirming] = useState(false);
+
+  const [alertExpanded, setAlertExpanded] = useState(false);
 
   // Price-update-from-image state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -343,27 +345,33 @@ export function Inventory() {
       </div>
 
       {lowStockProducts.length > 0 && (
-        <div className="bg-accent/20 border-2 border-accent rounded-2xl p-6 mb-6">
-          <div className="flex items-start gap-4">
-            <AlertTriangle className="h-7 w-7 text-accent-foreground flex-shrink-0 mt-1" />
-            <div>
-              <h3 className="text-accent-foreground mb-2">Low Stock Alert</h3>
-              <p className="text-foreground">
-                {lowStockProducts.length}{" "}
-                {lowStockProducts.length === 1 ? "product needs" : "products need"} restocking:
-              </p>
-              <ul className="mt-2 space-y-1">
-                {lowStockProducts.map((product) => (
-                  <li key={product.id} className="text-foreground">
-                    • {product.name}:{" "}
-                    <span className="font-medium">
-                      {product.stock} {product.unit}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+        <div className="bg-accent/20 border-2 border-accent rounded-2xl mb-6 overflow-hidden">
+          <button
+            onClick={() => setAlertExpanded((prev) => !prev)}
+            className="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/10 transition-colors"
+          >
+            <AlertTriangle className="h-5 w-5 text-accent-foreground flex-shrink-0" />
+            <span className="flex-1 font-medium text-accent-foreground">
+              Low Stock Alert — {lowStockProducts.length}{" "}
+              {lowStockProducts.length === 1 ? "product needs" : "products need"} restocking
+            </span>
+            <ChevronDown
+              className={`h-5 w-5 text-accent-foreground transition-transform duration-200 ${alertExpanded ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {alertExpanded && (
+            <ul className="px-5 pb-4 space-y-1 border-t border-accent/30 pt-3">
+              {lowStockProducts.map((product) => (
+                <li key={product.id} className="text-foreground">
+                  • {product.name}:{" "}
+                  <span className="font-medium">
+                    {product.stock} {product.unit}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
