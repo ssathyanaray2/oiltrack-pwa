@@ -1,11 +1,18 @@
 import { Outlet, Link, useLocation } from "react-router";
-import { Home, Package, ShoppingCart, Users, WifiOff } from "lucide-react";
+import { Home, Package, ShoppingCart, Users, WifiOff, LogOut } from "lucide-react";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
+import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import React from "react";
 
 export function Root() {
   const location = useLocation();
   const isOnline = useOnlineStatus();
+
+  const handleSignOut = async () => {
+    if (isSupabaseConfigured() && supabase) {
+      await supabase.auth.signOut();
+    }
+  };
 
   const navItems = [
     { path: "/", icon: Home, label: "Dashboard" },
@@ -57,6 +64,15 @@ export function Root() {
               </Link>
             );
           })}
+          {isSupabaseConfigured() && (
+            <button
+              onClick={handleSignOut}
+              className="flex flex-col items-center justify-center gap-1 py-2 px-4 rounded-xl transition-colors min-w-[80px] text-muted-foreground hover:text-destructive"
+            >
+              <LogOut className="h-7 w-7" />
+              <span className="text-sm">Sign Out</span>
+            </button>
+          )}
         </div>
       </nav>
     </div>

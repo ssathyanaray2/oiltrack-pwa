@@ -7,6 +7,7 @@ export interface Product {
   lowStockThreshold: number;
   pricePerLiter: number;
   costPrice: number;
+  unitSize: number;
 }
 
 export interface Customer {

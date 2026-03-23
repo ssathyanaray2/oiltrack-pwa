@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Plus, X } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Plus, X, Sparkles, RotateCcw, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
@@ -16,6 +16,7 @@ import {
 } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, getCachedCustomers, setCachedOrders, setCachedProducts, setCachedCustomers } from "../../lib/cache";
+import { parseOrderText, type ParsedOrderItem } from "../../lib/orderParser";
 import type { Order, Product, Customer } from "../../lib/types";
 import { orders as mockOrders, products as mockProducts, customers as mockCustomers } from "../data/mockData";
 
@@ -45,6 +46,13 @@ export function OrderForm() {
   });
 
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([{ productId: "", quantity: "" }]);
+
+  // AI order parser modal
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiText, setAIText] = useState("");
+  const [aiStep, setAIStep] = useState<"input" | "confirm">("input");
+  const [aiParsing, setAIParsing] = useState(false);
+  const [aiParsed, setAIParsed] = useState<ParsedOrderItem[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -135,8 +143,6 @@ export function OrderForm() {
   useEffect(() => {
     if (!isOnline) {
       toast.info("You're offline. Orders will be saved locally.", { duration: 5000 });
-    } else if (offlineOrders.length > 0) {
-      toast.success("You're back online! Offline orders are ready to sync.", { duration: 5000 });
     }
   }, [isOnline]);
 
@@ -165,6 +171,70 @@ export function OrderForm() {
     }, 0);
   };
 
+  // ── REPEAT LAST ORDER ─────────────────────────────────────────────
+  const handleRepeatLastOrder = () => {
+    if (!formData.customerId) return;
+    const cached = getCachedOrders() as Order[] | null;
+    const customerOrders = (cached ?? [])
+      .filter((o) => o.customerId === formData.customerId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const last = customerOrders[0];
+    if (!last) {
+      toast.info("No previous orders found for this customer");
+      return;
+    }
+    const items = last.items && last.items.length > 0
+      ? last.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString() }))
+      : [{ productId: last.productId, quantity: last.quantity.toString() }];
+    setOrderItems(items);
+    toast.success("Filled with last order items");
+  };
+
+  const customerHasPreviousOrder = () => {
+    if (!formData.customerId) return false;
+    const cached = getCachedOrders() as Order[] | null;
+    return (cached ?? []).some((o) => o.customerId === formData.customerId);
+  };
+
+  // ── AI ORDER PARSER ────────────────────────────────────────────────
+  const handleAIParse = async () => {
+    if (!aiText.trim()) return;
+    setAIParsing(true);
+    try {
+      const items = await parseOrderText(aiText, products);
+      if (items.length === 0) {
+        toast.info("Couldn't match any products — try rephrasing");
+        return;
+      }
+      setAIParsed(items);
+      setAIStep("confirm");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to parse order — check your connection and try again");
+    } finally {
+      setAIParsing(false);
+    }
+  };
+
+  const handleAIConfirm = () => {
+    setOrderItems(aiParsed.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity.toString(),
+    })));
+    setShowAIModal(false);
+    setAIText("");
+    setAIStep("input");
+    setAIParsed([]);
+    toast.success("Order items filled in");
+  };
+
+  const closeAIModal = () => {
+    setShowAIModal(false);
+    setAIText("");
+    setAIStep("input");
+    setAIParsed([]);
+  };
+
   const handlePrint = () => {
     const customer = customers.find((c) => c.id === formData.customerId);
     if (!customer || orderItems.some((i) => !i.productId || !i.quantity)) {
@@ -178,8 +248,8 @@ export function OrderForm() {
         <tr>
           <td style="padding: 10px; border-bottom: 1px solid #D4A574;">${product?.name ?? ""}</td>
           <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">${qty} L</td>
-          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">$${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L</td>
-          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">$${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">&#8377;${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L</td>
+          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">&#8377;${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}</td>
         </tr>`;
     }).join("");
     const printContent = `
@@ -224,7 +294,7 @@ export function OrderForm() {
             <tbody>${itemRows}</tbody>
           </table>
           ${formData.notes ? `<div class="info-row" style="margin-top:20px;"><span class="label">Notes:</span> ${formData.notes}</div>` : ""}
-          <div class="total">TOTAL: $${getOrderTotal().toFixed(2)}</div>
+          <div class="total">TOTAL: &#8377;${getOrderTotal().toFixed(2)}</div>
           <div class="footer">
             Thank you for your business!<br>
             Printed on ${new Date().toLocaleString()}
@@ -256,7 +326,7 @@ export function OrderForm() {
     const itemLines = orderItems.map((item, i) => {
       const product = products.find((p) => p.id === item.productId);
       const qty = parseInt(item.quantity || "0", 10);
-      return `Item ${i + 1},${product?.name ?? ""},${qty} Liters,$${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L,$${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}`;
+      return `Item ${i + 1},${product?.name ?? ""},${qty} Liters,₹${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L,₹${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}`;
     }).join("\n");
     const csvContent = `Order Receipt
 Order ID,${id || "NEW"}
@@ -277,7 +347,7 @@ Items
 ,Product,Quantity,Price/L,Subtotal
 ${itemLines}
 
-Total,$${getOrderTotal().toFixed(2)}
+Total,₹${getOrderTotal().toFixed(2)}
 `;
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
@@ -495,6 +565,16 @@ Total,$${getOrderTotal().toFixed(2)}
               Delivery: {customers.find((c) => c.id === formData.customerId)?.address}
             </p>
           )}
+          {customerHasPreviousOrder() && (
+            <button
+              type="button"
+              onClick={handleRepeatLastOrder}
+              className="mt-3 w-full flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-3 px-4 text-sm font-medium transition-colors active:scale-95"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Repeat Last Order
+            </button>
+          )}
         </div>
 
         {/* Order Items */}
@@ -504,14 +584,26 @@ Total,$${getOrderTotal().toFixed(2)}
               <h2 className="font-semibold text-lg text-foreground">Oil Items *</h2>
               <p className="text-sm text-muted-foreground">Select oil type and quantity for each item</p>
             </div>
-            <button
-              type="button"
-              onClick={addItem}
-              className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl px-4 py-2.5 text-sm font-medium transition-colors active:scale-95"
-            >
-              <Plus className="h-4 w-4" />
-              Add Item
-            </button>
+            <div className="flex items-center gap-2">
+              {isSupabaseConfigured() && (
+                <button
+                  type="button"
+                  onClick={() => setShowAIModal(true)}
+                  className="flex items-center gap-1.5 bg-accent/20 hover:bg-accent/30 text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium transition-colors active:scale-95"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  AI Fill
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={addItem}
+                className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl px-4 py-2.5 text-sm font-medium transition-colors active:scale-95"
+              >
+                <Plus className="h-4 w-4" />
+                Add Item
+              </button>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -551,7 +643,7 @@ Total,$${getOrderTotal().toFixed(2)}
                       <option value="">Select oil type</option>
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} — ${product.pricePerLiter.toFixed(2)}/L
+                          {product.name} — ₹{product.pricePerLiter.toFixed(2)}/L
                         </option>
                       ))}
                     </select>
@@ -588,7 +680,7 @@ Total,$${getOrderTotal().toFixed(2)}
           {orderItems.some((i) => i.productId && i.quantity) && (
             <div className="mt-4 pt-4 border-t-2 border-border flex items-center justify-between">
               <span className="font-semibold text-foreground">Order Total</span>
-              <span className="text-xl font-bold text-primary">${getOrderTotal().toFixed(2)}</span>
+              <span className="text-xl font-bold text-primary">₹{getOrderTotal().toFixed(2)}</span>
             </div>
           )}
         </div>
@@ -671,6 +763,134 @@ Total,$${getOrderTotal().toFixed(2)}
           )}
         </div>
       </form>
+
+      {/* ── AI ORDER PARSER MODAL ─────────────────────────────────── */}
+      {showAIModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50 p-4 pb-8">
+          <div className="bg-card rounded-2xl w-full max-w-lg shadow-xl border-2 border-border">
+
+            {/* Header */}
+            <div className="p-5 border-b border-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold text-foreground">
+                  {aiStep === "input" ? "Describe the Order" : "Confirm Items"}
+                </h2>
+              </div>
+              <button onClick={closeAIModal} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {aiStep === "input" ? (
+              <>
+                <div className="p-5 space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Type or paste the order in plain text — e.g. a WhatsApp message or a spoken description.
+                  </p>
+                  <textarea
+                    autoFocus
+                    value={aiText}
+                    onChange={(e) => setAIText(e.target.value)}
+                    placeholder={"e.g. \"10L groundnut, 5 sunflower oil, coconut 3 litres, 20L palm\""}
+                    rows={5}
+                    className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary transition-colors resize-none"
+                  />
+                </div>
+                <div className="p-4 flex gap-3 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={closeAIModal}
+                    className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-3 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAIParse}
+                    disabled={aiParsing || !aiText.trim()}
+                    className="flex-1 bg-primary hover:bg-primary/90 disabled:opacity-60 text-primary-foreground rounded-xl py-3 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {aiParsing ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                        </svg>
+                        Parsing…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        Parse Order
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-5 space-y-3 max-h-[50vh] overflow-y-auto">
+                  <p className="text-sm text-muted-foreground">
+                    AI matched {aiParsed.length} item{aiParsed.length !== 1 ? "s" : ""}. Review before applying.
+                  </p>
+                  {aiParsed.map((item, i) => {
+                    const product = products.find((p) => p.id === item.productId);
+                    const unitSize = product?.unitSize ?? 1;
+                    const subtotal = (product?.pricePerLiter ?? 0) * item.quantity;
+                    const containers = unitSize > 1 ? Math.ceil(item.quantity / unitSize) : null;
+                    return (
+                      <div key={i} className="rounded-xl border-2 border-border bg-background p-4 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium text-foreground truncate">{item.productName}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {item.quantity} L
+                            {containers && (
+                              <span className="ml-1 text-xs text-primary">
+                                ({containers} × {unitSize}L)
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-semibold text-foreground">₹{subtotal.toFixed(2)}</p>
+                          <p className="text-xs text-muted-foreground">₹{product?.pricePerLiter.toFixed(2)}/L</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="pt-2 border-t border-border flex items-center justify-between">
+                    <span className="font-semibold text-foreground">Total</span>
+                    <span className="font-bold text-primary text-lg">
+                      ₹{aiParsed.reduce((sum, item) => {
+                        const product = products.find((p) => p.id === item.productId);
+                        return sum + (product?.pricePerLiter ?? 0) * item.quantity;
+                      }, 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-4 flex gap-3 border-t border-border">
+                  <button
+                    type="button"
+                    onClick={() => setAIStep("input")}
+                    className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-3 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAIConfirm}
+                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-3 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    Fill Order
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

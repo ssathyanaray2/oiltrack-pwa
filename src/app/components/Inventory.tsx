@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
-import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice } from "../../lib/api";
+import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice, updateProductUnitSize } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
@@ -19,7 +19,7 @@ export function Inventory() {
     productId: string;
     productName: string;
     unit: string;
-    action: "add" | "remove" | "pricePerLiter" | "costPrice";
+    action: "add" | "remove" | "pricePerLiter" | "costPrice" | "unitSize";
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -152,6 +152,39 @@ export function Inventory() {
       return;
     }
 
+    // ── UNIT SIZE UPDATE ────────────────────────────────────────────
+    if (modalData.action === "unitSize") {
+      const newSize = parseFloat(inputAmount);
+      if (isNaN(newSize) || newSize <= 0) {
+        toast.error("Please enter a valid container size");
+        return;
+      }
+      if (isSupabaseConfigured() && isOnline) {
+        try {
+          const updated = await updateProductUnitSize(modalData.productId, newSize);
+          setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+          setCachedProducts(
+            products.map((p) =>
+              p.id === modalData.productId ? { ...p, unitSize: newSize } : p
+            )
+          );
+          toast.success(`Container size updated to ${newSize}L for ${modalData.productName}`);
+        } catch (e) {
+          toast.error("Failed to update container size");
+          console.error(e);
+        }
+      } else {
+        const next = products.map((p) =>
+          p.id === modalData.productId ? { ...p, unitSize: newSize } : p
+        );
+        setProducts(next);
+        setCachedProducts(next);
+        toast.success(`Container size updated to ${newSize}L (saved locally)`);
+      }
+      closeModal();
+      return;
+    }
+
     // ── STOCK ADD / REMOVE ──────────────────────────────────────────
     const amount = parseInt(inputAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -249,7 +282,7 @@ export function Inventory() {
   const handleApplyPrices = async () => {
     setApplyingPrices(true);
     try {
-      const changedOnly = priceChanges.filter((c) => c.newPrice !== c.currentPrice);
+      const changedOnly = priceChanges.filter((c) => !c.isNew && c.newPrice !== c.currentPrice);
       for (const change of changedOnly) {
         if (isSupabaseConfigured() && isOnline) {
           const updated = await updateProductUnitPrice(change.productId, change.newPrice);
@@ -383,15 +416,25 @@ export function Inventory() {
               key={product.id}
               className={`relative bg-card rounded-2xl p-6 shadow-md border-2 ${stockStatus.borderColor}`}
             >
-              {/* Cost price — top-right corner */}
-              <button
-                onClick={() => openModal(product.id, product.name, product.unit, "costPrice")}
-                className="absolute top-4 right-4 flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg px-2.5 py-1 text-sm font-medium transition-colors group"
-                title="Tap to edit cost price"
-              >
-                <span>CP: ₹{product.costPrice}</span>
-                <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
+              {/* Top-right badges */}
+              <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5">
+                <button
+                  onClick={() => openModal(product.id, product.name, product.unit, "costPrice")}
+                  className="flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg px-2.5 py-1 text-sm font-medium transition-colors group"
+                  title="Tap to edit cost price"
+                >
+                  <span>CP: ₹{product.costPrice}</span>
+                  <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+                <button
+                  onClick={() => openModal(product.id, product.name, product.unit, "unitSize")}
+                  className="flex items-center gap-1 bg-muted hover:bg-muted/80 text-muted-foreground rounded-lg px-2.5 py-1 text-sm font-medium transition-colors group"
+                  title="Tap to edit container size"
+                >
+                  <span>{product.unitSize}L/unit</span>
+                  <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              </div>
 
               <div className="flex items-start gap-4">
                 <div className={`${stockStatus.bgColor} p-4 rounded-xl`}>
@@ -468,15 +511,19 @@ export function Inventory() {
                 ? "Remove Stock"
                 : modalData.action === "costPrice"
                 ? "Update Cost Price"
+                : modalData.action === "unitSize"
+                ? "Update Container Size"
                 : "Update Selling Price"}
             </h2>
             <p className="text-muted-foreground mb-6">{modalData.productName}</p>
 
             <label htmlFor="amount-input" className="block mb-3 text-foreground">
               {modalData.action === "pricePerLiter"
-                ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
+                ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
                 : modalData.action === "costPrice"
                 ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
+                : modalData.action === "unitSize"
+                ? "Container size in litres (e.g. 5 for a 5L tin):"
                 : `Enter amount (${modalData.unit.toLowerCase()}):`}
             </label>
             <input
@@ -528,7 +575,33 @@ export function Inventory() {
             </div>
 
             <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
-              {priceChanges.map((change) => {
+              {priceChanges.map((change, idx) => {
+                if (change.isNew) {
+                  return (
+                    <div
+                      key={`new-${idx}`}
+                      className="rounded-xl p-4 border-2 border-accent/50 bg-accent/10"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-foreground truncate">{change.extractedName}</p>
+                            <span className="text-xs bg-accent text-accent-foreground px-2 py-0.5 rounded-lg whitespace-nowrap">
+                              Not in inventory
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Found in image — not matched to any product
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-foreground font-semibold">₹{change.newPrice}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const diff = change.newPrice - change.currentPrice;
                 const pct = change.currentPrice > 0
                   ? ((diff / change.currentPrice) * 100).toFixed(1)
@@ -582,7 +655,12 @@ export function Inventory() {
             </div>
 
             <div className="p-4 border-t border-border text-sm text-muted-foreground">
-              {priceChanges.filter((c) => c.newPrice !== c.currentPrice).length} of {priceChanges.length} prices will change
+              {priceChanges.filter((c) => !c.isNew && c.newPrice !== c.currentPrice).length} of {priceChanges.filter((c) => !c.isNew).length} inventory prices will change
+              {priceChanges.filter((c) => c.isNew).length > 0 && (
+                <span className="ml-2 text-accent-foreground">
+                  · {priceChanges.filter((c) => c.isNew).length} not in inventory
+                </span>
+              )}
             </div>
 
             <div className="p-4 flex gap-3">
@@ -595,7 +673,7 @@ export function Inventory() {
               </button>
               <button
                 onClick={handleApplyPrices}
-                disabled={applyingPrices || priceChanges.every((c) => c.newPrice === c.currentPrice)}
+                disabled={applyingPrices || priceChanges.every((c) => c.isNew || c.newPrice === c.currentPrice)}
                 className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 flex items-center justify-center gap-2 transition-colors active:scale-95 disabled:opacity-60"
               >
                 {applyingPrices && (

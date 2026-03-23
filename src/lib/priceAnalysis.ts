@@ -6,6 +6,7 @@ export interface PriceChange {
   extractedName: string;
   currentPrice: number;
   newPrice: number;
+  isNew: boolean;
 }
 
 type SupportedMimeType = "image/jpeg" | "image/png" | "image/webp" | "image/gif";

@@ -61,28 +61,28 @@ serve(async (req) => {
               },
               {
                 type: "text",
-                text: `This image contains an oil product price list. Extract all product prices and match them to our inventory.
+                text: `This image contains an oil product price list. Extract ALL product prices from the image.
 
 Our inventory products:
 ${productList}
 
 Rules:
-1. Match each price in the image to the closest product name from our list above
-2. Only include matches you are confident about — skip anything ambiguous
-3. Prices must be plain numbers only (e.g. 142.50, not "₹142.50")
-4. The "matchedProduct" field must be copied EXACTLY from our product list above
+1. For each price in the image, try to match it to a product from our inventory list above
+2. If a confident match is found, set "matchedProduct" to the EXACT name from our list
+3. If no match exists in our inventory, set "matchedProduct" to null — still include the item
+4. Prices must be plain numbers only (e.g. 142.50, not "₹142.50")
 5. Return ONLY a valid JSON array — no explanation, no markdown, no extra text
 
 JSON format:
 [
   {
-    "matchedProduct": "exact name from our list",
+    "matchedProduct": "exact name from our list or null",
     "extractedName": "name as written in the image",
     "newPrice": 142.50
   }
 ]
 
-If no products match, return [].`,
+If the image has no prices at all, return [].`,
               },
             ],
           },
@@ -112,24 +112,46 @@ If no products match, return [].`,
     }
 
     const extracted: Array<{
-      matchedProduct: string;
+      matchedProduct: string | null;
       extractedName: string;
       newPrice: number;
     }> = JSON.parse(jsonMatch[0]);
 
     const changes = extracted
+      .filter((item) => item.newPrice && item.newPrice > 0)
       .map((item) => {
-        const product = products.find((p) => p.name === item.matchedProduct);
-        if (!product || !item.newPrice || item.newPrice <= 0) return null;
+        if (item.matchedProduct) {
+          const product = products.find((p) => p.name === item.matchedProduct);
+          if (!product) {
+            // Claude returned a name that doesn't exactly match — treat as new
+            return {
+              productId: "",
+              productName: item.extractedName,
+              extractedName: item.extractedName,
+              currentPrice: 0,
+              newPrice: Number(item.newPrice),
+              isNew: true,
+            };
+          }
+          return {
+            productId: product.id,
+            productName: product.name,
+            extractedName: item.extractedName,
+            currentPrice: product.pricePerLiter,
+            newPrice: Number(item.newPrice),
+            isNew: false,
+          };
+        }
+        // No match in inventory — include as a new/unknown item
         return {
-          productId: product.id,
-          productName: product.name,
+          productId: "",
+          productName: item.extractedName,
           extractedName: item.extractedName,
-          currentPrice: product.pricePerLiter,
+          currentPrice: 0,
           newPrice: Number(item.newPrice),
+          isNew: true,
         };
-      })
-      .filter(Boolean);
+      });
 
     return new Response(
       JSON.stringify({ changes }),
