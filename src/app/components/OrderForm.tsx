@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
-import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Plus, X, Sparkles, RotateCcw, CheckCircle } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Share2, WifiOff, Plus, X, Sparkles, RotateCcw, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
@@ -48,6 +48,7 @@ export function OrderForm() {
   });
 
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([{ productId: "", quantity: "" }]);
+  const [saving, setSaving] = useState(false);
 
   // AI order parser modal
   const [showAIModal, setShowAIModal] = useState(false);
@@ -151,6 +152,7 @@ export function OrderForm() {
   const handleCustomerChange = (customerId: string) => {
     const customer = customers.find((c) => c.id === customerId);
     setFormData({ ...formData, customerId, customerName: customer?.name ?? "" });
+    setShowLastOrder(false);
   };
 
   const addItem = () => {
@@ -174,28 +176,25 @@ export function OrderForm() {
   };
 
   // ── REPEAT LAST ORDER ─────────────────────────────────────────────
-  const handleRepeatLastOrder = () => {
-    if (!formData.customerId) return;
+  const [showLastOrder, setShowLastOrder] = useState(false);
+
+  const getLastOrder = (): Order | null => {
+    if (!formData.customerId) return null;
     const cached = getCachedOrders() as Order[] | null;
-    const customerOrders = (cached ?? [])
+    return (cached ?? [])
       .filter((o) => o.customerId === formData.customerId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    const last = customerOrders[0];
-    if (!last) {
-      toast.info("No previous orders found for this customer");
-      return;
-    }
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null;
+  };
+
+  const handleRepeatLastOrder = () => {
+    const last = getLastOrder();
+    if (!last) return;
     const items = last.items && last.items.length > 0
       ? last.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString() }))
       : [{ productId: last.productId, quantity: last.quantity.toString() }];
     setOrderItems(items);
+    setShowLastOrder(false);
     toast.success("Filled with last order items");
-  };
-
-  const customerHasPreviousOrder = () => {
-    if (!formData.customerId) return false;
-    const cached = getCachedOrders() as Order[] | null;
-    return (cached ?? []).some((o) => o.customerId === formData.customerId);
   };
 
   // ── AI ORDER PARSER ────────────────────────────────────────────────
@@ -237,178 +236,98 @@ export function OrderForm() {
     setAIParsed([]);
   };
 
-  const handlePrint = () => {
-    const customer = customers.find((c) => c.id === formData.customerId);
-    if (!customer || orderItems.some((i) => !i.productId || !i.quantity)) {
-      toast.error("Missing product or customer information");
+  const handleShare = async () => {
+    if (orderItems.some((i) => !i.productId || !i.quantity)) {
+      toast.error("Please fill in all order items before sharing");
       return;
     }
-    const itemRows = orderItems.map((item) => {
+    const date = new Date(formData.date).toLocaleDateString("en-IN", {
+      day: "numeric", month: "short", year: "numeric",
+    });
+    const itemLines = orderItems.map((item) => {
       const product = products.find((p) => p.id === item.productId);
       const qty = parseInt(item.quantity || "0", 10);
-      return `
-        <tr>
-          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7;">${product?.name ?? ""}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7; text-align: right;">${qty} L</td>
-          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7; text-align: right;">&#8377;${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L</td>
-          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7; text-align: right;">&#8377;${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}</td>
-        </tr>`;
-    }).join("");
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Order Receipt - ${formData.customerName}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 40px; background: #faf8ff; }
-            h1 { color: #2563eb; }
-            .header { border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 30px; }
-            .info-row { margin: 15px 0; font-size: 16px; }
-            .label { font-weight: bold; color: #131b2e; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #131b2e; color: white; padding: 10px; text-align: left; }
-            th:not(:first-child) { text-align: right; }
-            .total { font-size: 24px; font-weight: bold; color: #2563eb; margin-top: 30px; padding-top: 20px; border-top: 2px solid #c3c6d7; }
-            .footer { margin-top: 40px; font-size: 14px; color: #737686; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Order Receipt</h1>
-            <p style="font-size: 14px; color: #737686;">Order ID: ${id || "NEW"}</p>
-          </div>
-          <div class="info-row"><span class="label">Customer:</span> ${customer.name}</div>
-          <div class="info-row"><span class="label">Delivery Address:</span> ${customer.address}</div>
-          <div class="info-row"><span class="label">Phone:</span> ${customer.phone}</div>
-          ${customer.email ? `<div class="info-row"><span class="label">Email:</span> ${customer.email}</div>` : ""}
-          <div class="info-row"><span class="label">Date:</span> ${new Date(formData.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</div>
-          <div class="info-row"><span class="label">Status:</span> ${formData.status}</div>
-          <div class="info-row"><span class="label">Payment Status:</span> ${formData.paymentStatus}</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Qty</th>
-                <th>Price/L</th>
-                <th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>${itemRows}</tbody>
-          </table>
-          ${formData.notes ? `<div class="info-row" style="margin-top:20px;"><span class="label">Notes:</span> ${formData.notes}</div>` : ""}
-          <div class="total">TOTAL: &#8377;${getOrderTotal().toFixed(2)}</div>
-          <div class="footer">
-            Thank you for your business!<br>
-            Printed on ${new Date().toLocaleString()}
-          </div>
-        </body>
-      </html>
-    `;
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 250);
-      toast.success("Opening print dialog...");
-    } else {
-      toast.error("Please enable pop-ups to print");
-    }
-  };
-
-  const handleExport = () => {
-    const customer = customers.find((c) => c.id === formData.customerId);
-    if (!customer || orderItems.some((i) => !i.productId || !i.quantity)) {
-      toast.error("Missing product or customer information");
-      return;
-    }
-    const itemLines = orderItems.map((item, i) => {
-      const product = products.find((p) => p.id === item.productId);
-      const qty = parseInt(item.quantity || "0", 10);
-      return `Item ${i + 1},${product?.name ?? ""},${qty} Liters,₹${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L,₹${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}`;
+      const subtotal = (product?.pricePerLiter ?? 0) * qty;
+      return `• ${product?.name ?? "Unknown"} — ${qty} L @ ₹${product?.pricePerLiter}/L = ₹${subtotal.toLocaleString("en-IN")}`;
     }).join("\n");
-    const csvContent = `Order Receipt
-Order ID,${id || "NEW"}
+    const total = getOrderTotal().toLocaleString("en-IN", { maximumFractionDigits: 0 });
+    const message = [
+      `🛢️ *Order Receipt*`,
+      `Customer: ${formData.customerName}`,
+      `Date: ${date}`,
+      ``,
+      `*Items:*`,
+      itemLines,
+      ``,
+      `*Total: ₹${total}*`,
+    ].join("\n").trim();
 
-Customer Information
-Name,${customer.name}
-Address,${customer.address}
-Phone,${customer.phone}
-Email,${customer.email || "N/A"}
-
-Order Details
-Date,${formData.date}
-Status,${formData.status}
-Payment Status,${formData.paymentStatus}
-Notes,${formData.notes || "N/A"}
-
-Items
-,Product,Quantity,Price/L,Subtotal
-${itemLines}
-
-Total,₹${getOrderTotal().toFixed(2)}
-`;
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", `order-${id || "new"}-${formData.customerName}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("Order exported successfully!");
+    if (navigator.share) {
+      try {
+        await navigator.share({ text: message });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          toast.error("Could not open share sheet");
+        }
+      }
+    } else {
+      await navigator.clipboard.writeText(message);
+      toast.success("Order details copied to clipboard");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.customerName) {
-      toast.error("Please select a customer");
-      return;
-    }
-    for (let i = 0; i < orderItems.length; i++) {
-      if (!orderItems[i].productId) {
-        toast.error(`Please select a product for item ${i + 1}`);
-        return;
-      }
-      const qty = parseInt(orderItems[i].quantity, 10);
-      if (isNaN(qty) || qty <= 0) {
-        toast.error(`Please enter a valid quantity for item ${i + 1}`);
-        return;
-      }
-    }
-
-    const parsedItems = orderItems.map((item) => ({
-      productId: item.productId,
-      quantity: parseInt(item.quantity, 10),
-    }));
-
-    if (!isOnline && !isEditing) {
-      await offlineOrdersDB.put({
-        id: `offline-${Date.now()}`,
-        customerId: formData.customerId,
-        customerName: formData.customerName,
-        date: formData.date,
-        status: formData.status,
-        paymentStatus: formData.paymentStatus,
-        notes: formData.notes,
-        items: orderItems,
-        createdAt: new Date().toISOString(),
-      });
-      toast.success("Order saved. It will sync automatically when you're back online.", { duration: 5000 });
-      navigate("/orders");
-      return;
-    }
-
-    if (!isSupabaseConfigured()) {
-      toast.success(isEditing ? "Order updated." : "Order created.");
-      navigate("/orders");
-      return;
-    }
-
+    setSaving(true);
     try {
+      if (!formData.customerName) {
+        toast.error("Please select a customer");
+        return;
+      }
+      if (orderItems.length === 0) {
+        toast.error("Please add at least one item to the order");
+        return;
+      }
+      for (let i = 0; i < orderItems.length; i++) {
+        if (!orderItems[i].productId) {
+          toast.error(`Please select a product for item ${i + 1}`);
+          return;
+        }
+        const qty = parseInt(orderItems[i].quantity, 10);
+        if (isNaN(qty) || qty <= 0) {
+          toast.error(`Please enter a valid quantity for item ${i + 1}`);
+          return;
+        }
+      }
+
+      const parsedItems = orderItems.map((item) => ({
+        productId: item.productId,
+        quantity: parseInt(item.quantity, 10),
+      }));
+
+      if (!isOnline && !isEditing) {
+        await offlineOrdersDB.put({
+          id: `offline-${Date.now()}`,
+          customerId: formData.customerId,
+          customerName: formData.customerName,
+          date: formData.date,
+          status: formData.status,
+          paymentStatus: formData.paymentStatus,
+          notes: formData.notes,
+          items: orderItems,
+          createdAt: new Date().toISOString(),
+        });
+        toast.success("Order saved. It will sync automatically when you're back online.", { duration: 5000 });
+        navigate("/orders");
+        return;
+      }
+
+      if (!isSupabaseConfigured()) {
+        toast.success(isEditing ? "Order updated." : "Order created.");
+        navigate("/orders");
+        return;
+      }
+
       for (const item of parsedItems) {
         const product = products.find((p) => p.id === item.productId);
         if (!product) {
@@ -452,6 +371,8 @@ Total,₹${getOrderTotal().toFixed(2)}
     } catch (err) {
       console.error(err);
       toast.error("Failed to save order");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -476,8 +397,48 @@ Total,₹${getOrderTotal().toFixed(2)}
 
   if (loading && isEditing) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center pb-32">
-        <p className="text-[#737686]">Loading order…</p>
+      <div className="min-h-screen bg-[#faf8ff] pb-32 animate-pulse">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+          <div className="w-9 h-9 rounded-xl bg-[#e2e7ff]" />
+          <div className="h-5 w-24 bg-[#e2e7ff] rounded-full" />
+          <div className="w-9 h-9 rounded-xl bg-[#e2e7ff]" />
+        </div>
+        <div className="space-y-4 mt-4">
+          {/* Customer card */}
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+            <div className="h-4 w-20 bg-[#e2e7ff] rounded-full mb-3" />
+            <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Order items card */}
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-4 w-20 bg-[#e2e7ff] rounded-full" />
+              <div className="h-8 w-8 bg-[#e2e7ff] rounded-xl" />
+            </div>
+            <div className="space-y-3">
+              <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+              <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+            </div>
+          </div>
+          {/* Status / notes card */}
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <div className="h-3.5 w-16 bg-[#e2e7ff] rounded-full mb-2" />
+                <div className="h-12 bg-[#e2e7ff] rounded-xl" />
+              </div>
+              <div>
+                <div className="h-3.5 w-24 bg-[#e2e7ff] rounded-full mb-2" />
+                <div className="h-12 bg-[#e2e7ff] rounded-xl" />
+              </div>
+            </div>
+            <div className="h-3.5 w-12 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-20 bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Submit button */}
+          <div className="mx-5 h-14 bg-[#e2e7ff] rounded-2xl" />
+        </div>
       </div>
     );
   }
@@ -493,6 +454,8 @@ Total,₹${getOrderTotal().toFixed(2)}
     );
   }
 
+  const isLocked = formData.status === "Packed" || formData.status === "Delivered";
+
   return (
     <div className="min-h-screen bg-[#faf8ff] pb-32">
       {/* Sticky header */}
@@ -507,22 +470,14 @@ Total,₹${getOrderTotal().toFixed(2)}
           {isEditing ? "Edit Order" : "New Order"}
         </h1>
         {isEditing ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
-            >
-              <Printer className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleExport}
-              className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
-            >
-              <Download className="h-4 w-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleShare}
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
+            title="Share order"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
         ) : (
           <div className="w-9" />
         )}
@@ -576,15 +531,57 @@ Total,₹${getOrderTotal().toFixed(2)}
               {customers.find((c) => c.id === formData.customerId)?.address}
             </p>
           )}
-          {customerHasPreviousOrder() && (
-            <button
-              type="button"
-              onClick={handleRepeatLastOrder}
-              className="mt-3 w-full flex items-center justify-center gap-2 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 px-4 text-sm font-semibold transition-colors active:scale-95"
-            >
-              <RotateCcw className="h-4 w-4" />
-              Repeat Last Order
-            </button>
+          {getLastOrder() && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setShowLastOrder((v) => !v)}
+                className="w-full flex items-center justify-between gap-2 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 px-4 text-sm font-semibold transition-colors active:scale-95"
+              >
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4" />
+                  Last Order
+                </div>
+                <svg
+                  className={`h-4 w-4 transition-transform ${showLastOrder ? "rotate-180" : ""}`}
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+
+              {showLastOrder && (() => {
+                const last = getLastOrder()!;
+                const lastItems = last.items && last.items.length > 0
+                  ? last.items
+                  : [{ productId: last.productId, quantity: last.quantity }];
+                return (
+                  <div className="mt-1 bg-[#f2f3ff] rounded-xl px-4 py-3 space-y-2">
+                    <p className="text-xs text-[#737686]">
+                      {new Date(last.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    </p>
+                    <div className="space-y-1.5">
+                      {lastItems.map((item, i) => {
+                        const product = products.find((p) => p.id === item.productId);
+                        return (
+                          <div key={i} className="flex items-center justify-between text-sm">
+                            <span className="text-[#131b2e] font-medium">{product?.name ?? "Unknown"}</span>
+                            <span className="text-[#737686]">{item.quantity} {product?.unit ?? "L"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRepeatLastOrder}
+                      className="w-full mt-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-2.5 text-sm font-semibold transition-colors active:scale-95"
+                    >
+                      Use this order
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
           )}
         </div>
 
@@ -600,7 +597,8 @@ Total,₹${getOrderTotal().toFixed(2)}
                 <button
                   type="button"
                   onClick={() => setShowAIModal(true)}
-                  className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95"
+                  disabled={isLocked}
+                  className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
                   AI Fill
@@ -609,10 +607,10 @@ Total,₹${getOrderTotal().toFixed(2)}
               <button
                 type="button"
                 onClick={addItem}
-                className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95"
+                disabled={isLocked}
+                className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add Item
               </button>
             </div>
           </div>
@@ -632,7 +630,7 @@ Total,₹${getOrderTotal().toFixed(2)}
                     <span className="text-xs font-semibold text-[#737686] uppercase tracking-wide">
                       Item {index + 1}
                     </span>
-                    {index > 0 && (
+                    {!isLocked && (
                       <button
                         type="button"
                         onClick={() => removeItem(index)}
@@ -720,13 +718,26 @@ Total,₹${getOrderTotal().toFixed(2)}
             <select
               id="status"
               value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as Order["status"] })}
+              onChange={(e) => {
+                const next = e.target.value as Order["status"];
+                if (existingOrder?.status === "Cancelled" && next !== "Cancelled") {
+                  if (!confirm("Reactivate this cancelled order? It will be moved back to Pending.")) return;
+                }
+                setFormData({ ...formData, status: next });
+              }}
               className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             >
               <option value="Pending">Pending</option>
-              <option value="Delivered">Delivered</option>
+              {/* From Cancelled, only allow back to Pending — not directly to Packed/Delivered */}
+              {existingOrder?.status !== "Cancelled" && <option value="Packed">Packed</option>}
+              {existingOrder?.status !== "Cancelled" && <option value="Delivered">Delivered</option>}
               <option value="Cancelled">Cancelled</option>
             </select>
+            {existingOrder?.status === "Cancelled" && (
+              <p className="text-xs text-amber-600 mt-1.5">
+                Cancelled orders can only be reactivated to Pending first.
+              </p>
+            )}
           </div>
         )}
 
@@ -743,7 +754,6 @@ Total,₹${getOrderTotal().toFixed(2)}
               className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             >
               <option value="Unpaid">Unpaid</option>
-              <option value="Partial">Partial</option>
               <option value="Paid">Paid</option>
             </select>
           </div>
@@ -768,10 +778,23 @@ Total,₹${getOrderTotal().toFixed(2)}
         <div className="space-y-3 px-5">
           <button
             type="submit"
-            className="w-full bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-2xl py-4 font-semibold text-base flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+            disabled={saving}
+            className="w-full bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-2xl py-4 font-semibold text-base flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-70"
           >
-            <Save className="h-5 w-5" />
-            {isEditing ? "Save Changes" : "Create Order"}
+            {saving ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                </svg>
+                {isEditing ? "Saving…" : "Creating…"}
+              </>
+            ) : (
+              <>
+                <Save className="h-5 w-5" />
+                {isEditing ? "Save Changes" : "Create Order"}
+              </>
+            )}
           </button>
 
           {isEditing && (

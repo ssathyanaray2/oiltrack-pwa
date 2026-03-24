@@ -17,6 +17,8 @@ export function CustomerForm() {
   const isOnline = useOnlineStatus();
 
   const [loading, setLoading] = useState(!!id);
+  const [saving, setSaving] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -86,29 +88,30 @@ export function CustomerForm() {
       return;
     }
 
-    if (!isSupabaseConfigured() || !isOnline) {
-      await offlineCustomersDB.put({
-        id: `offline-customer-${Date.now()}`,
-        name: formData.name.trim(),
-        phone: formData.phone.trim(),
-        address: formData.address.trim(),
-        email: formData.email.trim(),
-        maps_link: formData.maps_link.trim(),
-        createdAt: new Date().toISOString(),
-        isEdit: isEditing,
-        originalId: id ?? "",
-      });
-      toast.success(
-        isEditing
-          ? `Changes to "${formData.name}" saved. Will sync when back online.`
-          : `"${formData.name}" saved. Will sync when back online.`,
-        { duration: 5000 }
-      );
-      navigate("/customers");
-      return;
-    }
-
+    setSaving(true);
     try {
+      if (!isSupabaseConfigured() || !isOnline) {
+        await offlineCustomersDB.put({
+          id: `offline-customer-${Date.now()}`,
+          name: formData.name.trim(),
+          phone: formData.phone.trim(),
+          address: formData.address.trim(),
+          email: formData.email.trim(),
+          maps_link: formData.maps_link.trim(),
+          createdAt: new Date().toISOString(),
+          isEdit: isEditing,
+          originalId: id ?? "",
+        });
+        toast.success(
+          isEditing
+            ? `Changes to "${formData.name}" saved. Will sync when back online.`
+            : `"${formData.name}" saved. Will sync when back online.`,
+          { duration: 5000 }
+        );
+        navigate("/customers");
+        return;
+      }
+
       if (isEditing && id) {
         await updateCustomer(id, {
           name: formData.name.trim(),
@@ -135,6 +138,8 @@ export function CustomerForm() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to save customer");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -147,8 +152,46 @@ export function CustomerForm() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center pb-32">
-        <p className="text-[#737686]">Loading…</p>
+      <div className="min-h-screen bg-[#faf8ff] pb-32 animate-pulse">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+          <div className="w-9 h-9 rounded-xl bg-[#e2e7ff]" />
+          <div className="h-5 w-28 bg-[#e2e7ff] rounded-full" />
+          <div className="w-9" />
+        </div>
+        {/* Form card */}
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 mt-4 space-y-5">
+          {/* Name */}
+          <div>
+            <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Phone */}
+          <div>
+            <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Address */}
+          <div>
+            <div className="h-3.5 w-32 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-24 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Maps link */}
+          <div>
+            <div className="h-3.5 w-36 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="flex gap-2">
+              <div className="flex-1 h-12 bg-[#e2e7ff] rounded-xl" />
+              <div className="w-20 h-12 bg-[#e2e7ff] rounded-xl" />
+            </div>
+          </div>
+          {/* Email */}
+          <div>
+            <div className="h-3.5 w-20 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Submit button */}
+          <div className="h-14 w-full bg-[#e2e7ff] rounded-2xl" />
+        </div>
       </div>
     );
   }
@@ -298,9 +341,20 @@ export function CustomerForm() {
           {/* Submit */}
           <button
             type="submit"
-            className="w-full bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-2xl py-4 font-semibold text-base transition-colors active:scale-[0.98] mt-2"
+            disabled={saving}
+            className="w-full bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-2xl py-4 font-semibold text-base transition-colors active:scale-[0.98] mt-2 flex items-center justify-center gap-2 disabled:opacity-70"
           >
-            {isEditing ? "Save Changes" : "Add Customer"}
+            {saving ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                </svg>
+                {isEditing ? "Saving…" : "Adding…"}
+              </>
+            ) : (
+              isEditing ? "Save Changes" : "Add Customer"
+            )}
           </button>
         </form>
       </div>

@@ -281,8 +281,66 @@ export function Inventory() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center">
-        <p className="text-[#434655] font-medium">Loading inventory…</p>
+      <div className="min-h-screen bg-[#faf8ff] pb-32 animate-pulse">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+          <div className="h-6 w-24 bg-[#e2e7ff] rounded-full" />
+          <div className="h-9 w-9 bg-[#e2e7ff] rounded-xl" />
+        </div>
+        <div className="px-5 max-w-2xl mx-auto">
+          {/* Search bar */}
+          <div className="h-11 w-full bg-[#e2e7ff] rounded-xl mt-4" />
+          {/* Filter chips */}
+          <div className="flex gap-2 mt-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-8 w-20 bg-[#e2e7ff] rounded-full" />
+            ))}
+          </div>
+          {/* Product cards */}
+          <div className="mt-5 space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="bg-white rounded-xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.05)]">
+                {/* Card header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-[#e2e7ff]" />
+                    <div className="space-y-1.5">
+                      <div className="h-4 w-32 bg-[#e2e7ff] rounded-full" />
+                      <div className="h-3 w-20 bg-[#e2e7ff] rounded-full" />
+                    </div>
+                  </div>
+                  <div className="h-6 w-16 bg-[#e2e7ff] rounded-full" />
+                </div>
+                {/* Stock + Reorder grid */}
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="space-y-2">
+                    <div className="h-2.5 w-20 bg-[#e2e7ff] rounded-full" />
+                    <div className="h-8 w-28 bg-[#e2e7ff] rounded-full" />
+                    <div className="flex gap-2 mt-2">
+                      <div className="w-8 h-8 bg-[#e2e7ff] rounded-lg" />
+                      <div className="w-8 h-8 bg-[#e2e7ff] rounded-lg" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-2.5 w-16 bg-[#e2e7ff] rounded-full" />
+                    <div className="h-8 w-24 bg-[#e2e7ff] rounded-full" />
+                  </div>
+                </div>
+                {/* Price grid */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="h-2.5 w-20 bg-[#e2e7ff] rounded-full" />
+                    <div className="h-5 w-16 bg-[#e2e7ff] rounded-full" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-2.5 w-16 bg-[#e2e7ff] rounded-full" />
+                    <div className="h-5 w-14 bg-[#e2e7ff] rounded-full" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }

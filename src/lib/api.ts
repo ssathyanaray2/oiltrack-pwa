@@ -193,6 +193,11 @@ export async function deleteCustomer(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Stock is only deducted when an order is Packed or Delivered */
+function isStockDeducted(status: Order["status"]): boolean {
+  return status === "Packed" || status === "Delivered";
+}
+
 // ——— Orders (with order_items: one item per order for current UI) ———
 
 export async function getOrders(): Promise<Order[]> {
@@ -314,7 +319,7 @@ export async function createOrder(order: {
     if (itemError) throw itemError;
   }
 
-  if (order.status !== "Cancelled") {
+  if (isStockDeducted(order.status)) {
     for (const item of itemList) {
       const p = productMap.get(item.productId);
       if (p) await updateProduct(item.productId, { stock: Math.max(0, p.stock - item.quantity) });
@@ -358,8 +363,8 @@ export async function updateOrder(
       : null;
 
   if (newItems) {
-    // Restore stock for existing items
-    if (existing.status !== "Cancelled" && existing.items?.length) {
+    // Restore stock for existing items (only if stock was previously deducted)
+    if (isStockDeducted(existing.status) && existing.items?.length) {
       for (const item of existing.items) {
         const prod = await getProduct(item.productId);
         if (prod) await updateProduct(item.productId, { stock: prod.stock + item.quantity });
@@ -392,9 +397,9 @@ export async function updateOrder(
       });
     }
 
-    // Deduct stock for new items (unless cancelling)
+    // Deduct stock for new items (only if new status has stock deducted)
     const newStatus = input.status ?? existing.status;
-    if (newStatus !== "Cancelled") {
+    if (isStockDeducted(newStatus)) {
       for (const item of newItems) {
         const p = productMap.get(item.productId);
         if (p) await updateProduct(item.productId, { stock: Math.max(0, p.stock - item.quantity) });
@@ -402,11 +407,23 @@ export async function updateOrder(
     }
   }
 
-  // Handle cancellation stock restore (when no items change but status changes to Cancelled)
-  if (!newItems && input.status === "Cancelled" && existing.status !== "Cancelled" && existing.items?.length) {
-    for (const item of existing.items) {
-      const prod = await getProduct(item.productId);
-      if (prod) await updateProduct(item.productId, { stock: prod.stock + item.quantity });
+  // Handle status-only changes (no item changes)
+  if (!newItems && input.status !== undefined && input.status !== existing.status) {
+    const wasDeducted = isStockDeducted(existing.status);
+    const willBeDeducted = isStockDeducted(input.status);
+
+    if (!wasDeducted && willBeDeducted && existing.items?.length) {
+      // e.g. Pending → Packed: deduct stock
+      for (const item of existing.items) {
+        const prod = await getProduct(item.productId);
+        if (prod) await updateProduct(item.productId, { stock: Math.max(0, prod.stock - item.quantity) });
+      }
+    } else if (wasDeducted && !willBeDeducted && existing.items?.length) {
+      // e.g. Packed → Cancelled or Packed → Pending: restore stock
+      for (const item of existing.items) {
+        const prod = await getProduct(item.productId);
+        if (prod) await updateProduct(item.productId, { stock: prod.stock + item.quantity });
+      }
     }
   }
 
@@ -421,9 +438,11 @@ export async function updateOrder(
 export async function deleteOrder(id: string): Promise<void> {
   if (!supabase) throw new Error("Supabase not configured");
   const order = await getOrder(id);
-  if (order && order.status !== "Cancelled" && order.productId) {
-    const product = await getProduct(order.productId);
-    if (product) await updateProduct(order.productId, { stock: product.stock + order.quantity });
+  if (order && isStockDeducted(order.status) && order.items?.length) {
+    for (const item of order.items) {
+      const product = await getProduct(item.productId);
+      if (product) await updateProduct(item.productId, { stock: product.stock + item.quantity });
+    }
   }
   await supabase.from("order_items").delete().eq("order_id", id);
   const { error } = await supabase.from("orders").delete().eq("id", id);

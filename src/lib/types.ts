@@ -26,8 +26,8 @@ export interface Order {
   productId: string;
   quantity: number;
   date: string;
-  status: "Pending" | "Delivered" | "Cancelled";
-  paymentStatus: "Paid" | "Unpaid" | "Partial";
+  status: "Pending" | "Packed" | "Delivered" | "Cancelled";
+  paymentStatus: "Paid" | "Unpaid";
   notes?: string;
   items?: Array<{ productId: string; quantity: number }>;
 }

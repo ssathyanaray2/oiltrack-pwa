@@ -13,7 +13,7 @@ export interface OfflineOrder {
   customerName: string;
   date: string;
   status: "Pending" | "Delivered" | "Cancelled";
-  paymentStatus: "Paid" | "Unpaid" | "Partial";
+  paymentStatus: "Paid" | "Unpaid";
   notes: string;
   items: Array<{ productId: string; quantity: string }>;
   createdAt: string;

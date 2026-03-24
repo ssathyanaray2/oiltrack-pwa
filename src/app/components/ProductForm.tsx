@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -22,6 +22,11 @@ export function ProductForm() {
     unitSize: "",
   });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(false);
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -69,6 +74,61 @@ export function ProductForm() {
       setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#faf8ff] pb-32 animate-pulse">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+          <div className="w-9 h-9 rounded-xl bg-[#e2e7ff]" />
+          <div className="h-5 w-28 bg-[#e2e7ff] rounded-full" />
+          <div className="w-9" />
+        </div>
+        {/* Form card */}
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 mt-4 space-y-5">
+          {/* Name */}
+          <div>
+            <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Unit */}
+          <div>
+            <div className="h-3.5 w-12 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Initial Stock */}
+          <div>
+            <div className="h-3.5 w-24 bg-[#e2e7ff] rounded-full mb-2" />
+            <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+          {/* Selling + Cost Price */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="h-3.5 w-24 bg-[#e2e7ff] rounded-full mb-2" />
+              <div className="h-12 bg-[#e2e7ff] rounded-xl" />
+            </div>
+            <div>
+              <div className="h-3.5 w-20 bg-[#e2e7ff] rounded-full mb-2" />
+              <div className="h-12 bg-[#e2e7ff] rounded-xl" />
+            </div>
+          </div>
+          {/* Reorder + Container Size */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="h-3.5 w-20 bg-[#e2e7ff] rounded-full mb-2" />
+              <div className="h-12 bg-[#e2e7ff] rounded-xl" />
+            </div>
+            <div>
+              <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full mb-2" />
+              <div className="h-12 bg-[#e2e7ff] rounded-xl" />
+            </div>
+          </div>
+          {/* Submit button */}
+          <div className="h-14 w-full bg-[#e2e7ff] rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#faf8ff] pb-32">

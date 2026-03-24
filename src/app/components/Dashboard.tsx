@@ -146,8 +146,65 @@ export function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center">
-        <p className="text-[#434655] font-medium">Loading dashboard…</p>
+      <div className="min-h-screen bg-[#faf8ff] pb-28 animate-pulse">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-[#faf8ff] px-5 py-4 flex items-center justify-between shadow-[0_1px_0_#c3c6d7]">
+          <div className="h-6 w-24 bg-[#e2e7ff] rounded-full" />
+          <div className="w-9 h-9 rounded-full bg-[#e2e7ff]" />
+        </div>
+        <div className="px-5 pt-5 space-y-6 max-w-2xl mx-auto">
+          {/* Greeting */}
+          <div className="space-y-2">
+            <div className="h-7 w-48 bg-[#e2e7ff] rounded-full" />
+            <div className="h-4 w-64 bg-[#e2e7ff] rounded-full" />
+          </div>
+          {/* KPI Grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white rounded-2xl p-4 min-h-[110px] flex flex-col justify-between shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+                <div className="h-3 w-20 bg-[#e2e7ff] rounded-full" />
+                <div className="space-y-2">
+                  <div className="h-8 w-24 bg-[#e2e7ff] rounded-full" />
+                  <div className="h-3 w-16 bg-[#e2e7ff] rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Stock Overview */}
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] space-y-4">
+            <div className="h-4 w-32 bg-[#e2e7ff] rounded-full" />
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="space-y-2">
+                <div className="h-3 w-28 bg-[#e2e7ff] rounded-full" />
+                <div className="h-2.5 w-full bg-[#e2e7ff] rounded-full" />
+              </div>
+            ))}
+          </div>
+          {/* Recent Orders */}
+          <div className="space-y-3">
+            <div className="h-4 w-28 bg-[#e2e7ff] rounded-full" />
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="bg-white rounded-xl p-4 flex items-center justify-between shadow-[0_2px_8px_rgba(0,74,198,0.04)]">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#e2e7ff]" />
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full" />
+                    <div className="h-3 w-20 bg-[#e2e7ff] rounded-full" />
+                  </div>
+                </div>
+                <div className="space-y-1.5 items-end flex flex-col">
+                  <div className="h-3.5 w-16 bg-[#e2e7ff] rounded-full" />
+                  <div className="h-5 w-14 bg-[#e2e7ff] rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Chart */}
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+            <div className="h-4 w-32 bg-[#e2e7ff] rounded-full mb-5" />
+            <div className="h-[220px] w-full bg-[#e2e7ff] rounded-xl" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -338,6 +395,8 @@ export function Dashboard() {
                 const statusColor =
                   order.status === "Delivered"
                     ? { border: "#22c55e", bg: "bg-green-100", text: "text-green-700" }
+                    : order.status === "Packed"
+                    ? { border: "#2563eb", bg: "bg-blue-100", text: "text-blue-700" }
                     : order.status === "Cancelled"
                     ? { border: "#ba1a1a", bg: "bg-red-100", text: "text-red-700" }
                     : { border: "#943700", bg: "bg-orange-100", text: "text-orange-700" };

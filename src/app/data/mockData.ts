@@ -25,8 +25,8 @@ export interface Order {
   productId: string;
   quantity: number;
   date: string;
-  status: "Pending" | "Delivered" | "Cancelled";
-  paymentStatus: "Paid" | "Unpaid" | "Partial";
+  status: "Pending" | "Packed" | "Delivered" | "Cancelled";
+  paymentStatus: "Paid" | "Unpaid";
   notes?: string;
 }
 
@@ -136,7 +136,7 @@ export const orders: Order[] = [
     quantity: 100,
     date: "2026-03-10",
     status: "Delivered",
-    paymentStatus: "Partial",
+    paymentStatus: "Unpaid",
   },
 ];
 

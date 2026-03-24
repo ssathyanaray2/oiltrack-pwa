@@ -71,8 +71,37 @@ export function Customers() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center pb-32">
-        <p className="text-[#737686]">Loading customers…</p>
+      <div className="min-h-screen bg-[#faf8ff] pb-32 animate-pulse">
+        {/* Header */}
+        <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+          <div className="h-6 w-24 bg-[#e2e7ff] rounded-full" />
+          <div className="h-9 w-9 bg-[#e2e7ff] rounded-xl" />
+        </div>
+        <div className="px-5 pt-4 space-y-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+              {/* Avatar + name row */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-11 h-11 rounded-full bg-[#e2e7ff] flex-shrink-0" />
+                <div className="space-y-1.5">
+                  <div className="h-4 w-36 bg-[#e2e7ff] rounded-full" />
+                  <div className="h-3 w-24 bg-[#e2e7ff] rounded-full" />
+                </div>
+              </div>
+              {/* Contact rows */}
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 rounded-full bg-[#e2e7ff]" />
+                  <div className="h-3.5 w-32 bg-[#e2e7ff] rounded-full" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 rounded-full bg-[#e2e7ff]" />
+                  <div className="h-3.5 w-48 bg-[#e2e7ff] rounded-full" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
