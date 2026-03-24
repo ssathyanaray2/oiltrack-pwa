@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown, Search } from "lucide-react";
+import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown, Search, Trash2 } from "lucide-react";
+import { Link } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
 import { toast } from "sonner";
-import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice, updateProductUnitSize } from "../../lib/api";
+import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice, updateProductUnitSize, updateProductReorderThreshold, deleteProduct } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
@@ -23,7 +24,7 @@ export function Inventory() {
     productId: string;
     productName: string;
     unit: string;
-    action: "add" | "remove" | "pricePerLiter" | "costPrice" | "unitSize";
+    action: "add" | "remove" | "pricePerLiter" | "costPrice" | "unitSize" | "reorderThreshold";
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -66,10 +67,11 @@ export function Inventory() {
     productId: string,
     productName: string,
     unit: string,
-    action: "add" | "remove" | "pricePerLiter" | "costPrice"
+    action: "add" | "remove" | "pricePerLiter" | "costPrice" | "reorderThreshold",
+    initialValue = ""
   ) => {
     setModalData({ productId, productName, unit, action });
-    setInputAmount("");
+    setInputAmount(initialValue);
     setShowModal(true);
   };
 
@@ -78,6 +80,22 @@ export function Inventory() {
     setModalData(null);
     setInputAmount("");
     setConfirming(false);
+  };
+
+  const handleDelete = async (productId: string, productName: string) => {
+    if (!confirm(`Delete "${productName}"? This cannot be undone.`)) return;
+    try {
+      if (isSupabaseConfigured() && isOnline) {
+        await deleteProduct(productId);
+      }
+      const next = products.filter((p) => p.id !== productId);
+      setProducts(next);
+      setCachedProducts(next);
+      toast.success(`"${productName}" deleted`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to delete product");
+    }
   };
 
   const handleConfirm = async () => {
@@ -134,6 +152,24 @@ export function Inventory() {
           const next = products.map((p) => p.id === modalData.productId ? { ...p, unitSize: newSize } : p);
           setProducts(next); setCachedProducts(next);
           toast.success(`Container size updated to ${newSize}L (saved locally)`);
+        }
+        closeModal(); return;
+      }
+
+      if (modalData.action === "reorderThreshold") {
+        const newThreshold = parseFloat(inputAmount);
+        if (isNaN(newThreshold) || newThreshold < 0) { toast.error("Please enter a valid threshold"); return; }
+        if (isSupabaseConfigured() && isOnline) {
+          try {
+            const updated = await updateProductReorderThreshold(modalData.productId, newThreshold);
+            setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+            setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, lowStockThreshold: newThreshold } : p));
+            toast.success(`Reorder threshold updated to ${newThreshold} for ${modalData.productName}`);
+          } catch (e) { toast.error("Failed to update reorder threshold"); console.error(e); }
+        } else {
+          const next = products.map((p) => p.id === modalData.productId ? { ...p, lowStockThreshold: newThreshold } : p);
+          setProducts(next); setCachedProducts(next);
+          toast.success(`Reorder threshold updated to ${newThreshold} (saved locally)`);
         }
         closeModal(); return;
       }
@@ -217,7 +253,7 @@ export function Inventory() {
   };
 
   const getStockStatus = (stock: number, threshold: number) => {
-    if (stock <= threshold * 0.5) return { level: "critical" as const };
+    if (stock === 0) return { level: "critical" as const };
     if (stock <= threshold) return { level: "low" as const };
     return { level: "normal" as const };
   };
@@ -256,23 +292,31 @@ export function Inventory() {
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
         <h1 className="text-xl font-bold text-[#131b2e] tracking-tight">Inventory</h1>
-        {ai_price_update && (
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={analyzing}
-            className="flex items-center gap-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60"
+        <div className="flex items-center gap-2">
+          {ai_price_update && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={analyzing}
+              className="flex items-center gap-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60"
+            >
+              {analyzing ? (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                </svg>
+              ) : (
+                <ImageUp className="h-4 w-4" />
+              )}
+              {analyzing ? "Analysing…" : "Update Prices"}
+            </button>
+          )}
+          <Link
+            to="/inventory/new"
+            className="flex items-center justify-center bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
           >
-            {analyzing ? (
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-              </svg>
-            ) : (
-              <ImageUp className="h-4 w-4" />
-            )}
-            {analyzing ? "Analysing…" : "Update Prices"}
-          </button>
-        )}
+            <Plus className="h-4 w-4" />
+          </Link>
+        </div>
         <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleImageUpload} />
       </header>
 
@@ -373,71 +417,81 @@ export function Inventory() {
                         {badgeLabel}
                       </span>
                       <button
-                        onClick={() => openModal(product.id, product.name, product.unit, "pricePerLiter")}
-                        className="p-1.5 rounded-lg text-[#737686] hover:text-[#004ac6] hover:bg-[#eaedff] transition-colors"
-                        title="Edit price"
+                        onClick={() => handleDelete(product.id, product.name)}
+                        className="p-1.5 rounded-lg text-[#737686] hover:text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors"
+                        title="Delete product"
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
 
-                  {/* Stock + Gauge */}
-                  <div className="grid grid-cols-2 gap-4 items-end mb-4">
+                  {/* Stock + Reorder Threshold */}
+                  <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Current Stock</p>
                       <p className="text-2xl font-extrabold text-[#131b2e]">
                         {product.stock.toLocaleString()} <span className="text-sm font-medium text-[#434655]">{product.unit}</span>
                       </p>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => openModal(product.id, product.name, product.unit, "remove")}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#c3c6d7] text-[#737686] hover:border-[#ba1a1a] hover:text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors active:scale-95"
+                          title="Remove stock"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => openModal(product.id, product.name, product.unit, "add")}
+                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#004ac6] text-[#004ac6] hover:bg-[#004ac6] hover:text-white transition-colors active:scale-95"
+                          title="Add stock"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <div>
-                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-2">Stock Level</p>
-                      <div className="h-2.5 w-full bg-[#dae2fd] rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${barPercent}%`, backgroundColor: barColor }} />
-                      </div>
+                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Reorder At</p>
+                      <button
+                        onClick={() => openModal(product.id, product.name, product.unit, "reorderThreshold", String(product.lowStockThreshold))}
+                        className="flex items-center gap-1.5 group"
+                        title="Edit reorder threshold"
+                      >
+                        <p className="text-2xl font-extrabold text-[#131b2e]">
+                          {product.lowStockThreshold.toLocaleString()} <span className="text-sm font-medium text-[#434655]">{product.unit}</span>
+                        </p>
+                        <Pencil className="h-3.5 w-3.5 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                      </button>
                     </div>
                   </div>
 
                   {/* Price Row */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
+                  <div className="grid grid-cols-2 gap-4 mb-1">
+                    <div>
+                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Selling Price</p>
                       <button
                         onClick={() => openModal(product.id, product.name, product.unit, "pricePerLiter")}
-                        className="flex items-center gap-1 group"
+                        className="flex items-center gap-1.5 group"
                         title="Edit selling price"
                       >
-                        <span className="text-base font-bold text-[#131b2e]">₹{product.pricePerLiter}</span>
-                        <span className="text-sm text-[#434655]">/ {product.unit.toLowerCase()}</span>
-                        <Pencil className="h-3 w-3 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <span className="text-base font-semibold text-[#131b2e]">₹{product.pricePerLiter}</span>
+                        <span className="text-xs text-[#737686]">/ {product.unit.toLowerCase()}</span>
+                        <Pencil className="h-3 w-3 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                       </button>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Cost Price</p>
                       <button
                         onClick={() => openModal(product.id, product.name, product.unit, "costPrice")}
-                        className="flex items-center gap-1 text-xs bg-[#eaedff] text-[#004ac6] rounded-lg px-2 py-1 font-medium group hover:bg-[#dae2fd] transition-colors"
+                        className="flex items-center gap-1.5 group"
                         title="Edit cost price"
                       >
-                        <span>CP: ₹{product.costPrice}</span>
-                        <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <span className="text-base font-semibold text-[#131b2e]">₹{product.costPrice}</span>
+                        <Pencil className="h-3 w-3 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                       </button>
                     </div>
                   </div>
 
-                  {/* Add / Remove Buttons */}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => openModal(product.id, product.name, product.unit, "remove")}
-                      className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 flex items-center justify-center gap-2 transition-colors active:scale-95 text-sm font-semibold"
-                    >
-                      <Minus className="h-4 w-4" />
-                      Remove
-                    </button>
-                    <button
-                      onClick={() => openModal(product.id, product.name, product.unit, "add")}
-                      className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-3 flex items-center justify-center gap-2 transition-colors active:scale-95 text-sm font-semibold"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add
-                    </button>
-                  </div>
                 </div>
               );
             })
@@ -454,6 +508,7 @@ export function Inventory() {
                 : modalData.action === "remove" ? "Remove Stock"
                 : modalData.action === "costPrice" ? "Update Cost Price"
                 : modalData.action === "unitSize" ? "Update Container Size"
+                : modalData.action === "reorderThreshold" ? "Update Reorder Threshold"
                 : "Update Selling Price"}
             </h2>
             <p className="text-[#434655] text-sm mb-6">{modalData.productName}</p>
@@ -461,6 +516,7 @@ export function Inventory() {
               {modalData.action === "pricePerLiter" ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
                 : modalData.action === "costPrice" ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
                 : modalData.action === "unitSize" ? "Container size in litres:"
+                : modalData.action === "reorderThreshold" ? `Reorder when stock falls below (${modalData.unit.toLowerCase()}):`
                 : `Enter amount (${modalData.unit.toLowerCase()}):`}
             </label>
             <input

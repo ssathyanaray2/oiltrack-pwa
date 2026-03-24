@@ -87,7 +87,6 @@ export function Customers() {
           className="flex items-center gap-1.5 bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
         >
           <Plus className="h-4 w-4" />
-          Add Customer
         </Link>
       </div>
 
@@ -200,7 +199,7 @@ export function Customers() {
                       <Mail className="h-4 w-4 flex-shrink-0 text-[#737686]" />
                       <a
                         href={`mailto:${customer.email}`}
-                        className="text-sm text-[#2563eb] hover:underline"
+                        className="text-sm text-[#2563eb] hover:underline break-all min-w-0"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {customer.email}

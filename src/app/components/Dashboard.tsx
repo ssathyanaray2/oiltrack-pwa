@@ -212,7 +212,7 @@ export function Dashboard() {
       <main className="px-5 pt-5 space-y-6 max-w-2xl mx-auto">
         {/* Greeting */}
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-[#131b2e]">
+          <h1 className="text-2xl font-extrabold tracking-tight text-[#131b2e] break-words">
             {getGreeting()}{userName ? `, ${userName}` : ""}
           </h1>
           <p className="text-sm text-[#434655] mt-0.5">Here is your business overview for today.</p>
@@ -221,13 +221,13 @@ export function Dashboard() {
         {/* KPI Grid */}
         <section className="grid grid-cols-2 gap-3">
           {/* Total Revenue */}
-          <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)] flex flex-col justify-between min-h-[110px]">
+          <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)] flex flex-col justify-between min-h-[110px] overflow-hidden">
             <div className="flex items-start justify-between">
               <span className="text-[10px] font-bold tracking-widest uppercase text-[#434655]">Total Revenue</span>
-              <IndianRupee className="h-5 w-5 text-[#2563eb]" />
+              <IndianRupee className="h-5 w-5 text-[#2563eb] flex-shrink-0" />
             </div>
-            <div>
-              <div className="text-xl font-extrabold tracking-tight text-[#2563eb]">
+            <div className="min-w-0">
+              <div className="text-xl font-extrabold tracking-tight text-[#2563eb] truncate">
                 ₹{totalRevenue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
               </div>
               <div className="flex items-center gap-1 mt-1">
@@ -306,11 +306,11 @@ export function Dashboard() {
                 const barColor = isCritical ? "#ba1a1a" : isLow ? "#943700" : "#004ac6";
                 return (
                   <div key={product.id} className="space-y-1.5">
-                    <div className="flex justify-between text-xs font-semibold uppercase tracking-wide">
-                      <span className={isCritical ? "text-[#ba1a1a]" : isLow ? "text-[#943700]" : "text-[#434655]"}>
+                    <div className="flex justify-between gap-2 text-xs font-semibold uppercase tracking-wide">
+                      <span className={`truncate min-w-0 ${isCritical ? "text-[#ba1a1a]" : isLow ? "text-[#943700]" : "text-[#434655]"}`}>
                         {product.name}{isCritical ? " (Critical)" : isLow ? " (Low)" : ""}
                       </span>
-                      <span className="text-[#131b2e]">{barPercent}%</span>
+                      <span className="text-[#131b2e] flex-shrink-0">{barPercent}%</span>
                     </div>
                     <div className="h-2.5 w-full bg-[#dae2fd] rounded-full overflow-hidden">
                       <div
@@ -345,21 +345,21 @@ export function Dashboard() {
                 return (
                   <div
                     key={order.id}
-                    className="bg-white rounded-xl p-4 flex items-center justify-between shadow-[0_2px_8px_rgba(0,74,198,0.04)] border-l-4"
+                    className="bg-white rounded-xl p-4 flex items-center justify-between gap-3 shadow-[0_2px_8px_rgba(0,74,198,0.04)] border-l-4"
                     style={{ borderLeftColor: statusColor.border }}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-[#eaedff] flex items-center justify-center">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-[#eaedff] flex items-center justify-center flex-shrink-0">
                         <ShoppingCart className="h-4 w-4 text-[#434655]" />
                       </div>
-                      <div>
-                        <p className="font-bold text-sm text-[#131b2e]">{order.customerName}</p>
-                        <p className="text-xs text-[#434655]">
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-[#131b2e] truncate">{order.customerName}</p>
+                        <p className="text-xs text-[#434655] truncate">
                           {product?.name ?? "Product"}, {order.quantity} {product?.unit ?? "units"}
                         </p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right flex-shrink-0">
                       <p className="font-bold text-sm text-[#131b2e]">₹{amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${statusColor.bg} ${statusColor.text}`}>
                         {order.status}

@@ -4,6 +4,7 @@ import { AuthGuard } from "./components/AuthGuard";
 import { Login } from "./components/Login";
 import { Dashboard } from "./components/Dashboard";
 import { Inventory } from "./components/Inventory";
+import { ProductForm } from "./components/ProductForm";
 import { Orders } from "./components/Orders";
 import { OrderForm } from "./components/OrderForm";
 import { Customers } from "./components/Customers";
@@ -21,6 +22,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, Component: Dashboard },
           { path: "inventory", Component: Inventory },
+          { path: "inventory/new", Component: ProductForm },
           { path: "orders", Component: Orders },
           { path: "orders/new", Component: OrderForm },
           { path: "orders/edit/:id", Component: OrderForm },

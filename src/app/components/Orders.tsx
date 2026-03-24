@@ -159,7 +159,6 @@ export function Orders() {
           className="flex items-center gap-1.5 bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
         >
           <Plus className="h-4 w-4" />
-          New Order
         </Link>
       </div>
 
@@ -271,6 +270,7 @@ export function Orders() {
           <div className="space-y-3">
             {filteredOrders.map((order) => {
               const total = calculateOrderTotal(order.productId, order.quantity);
+              const formattedTotal = total.toLocaleString("en-IN", { maximumFractionDigits: 0 });
               return (
                 <Link
                   key={order.id}
@@ -285,9 +285,9 @@ export function Orders() {
                         <User className="h-4 w-4 text-[#737686] flex-shrink-0" />
                         <span className="font-bold text-[#131b2e] truncate">{order.customerName}</span>
                       </div>
-                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <div className="flex items-center gap-0.5 flex-shrink-0 ml-2">
                         <IndianRupee className="h-3.5 w-3.5 text-[#004ac6]" />
-                        <span className="font-bold text-[#004ac6] text-sm">{total.toFixed(2)}</span>
+                        <span className="font-bold text-[#004ac6] text-sm">{formattedTotal}</span>
                       </div>
                     </div>
 
@@ -329,6 +329,7 @@ export function Orders() {
           <div className="space-y-2">
             {filteredOrders.map((order) => {
               const total = calculateOrderTotal(order.productId, order.quantity);
+              const formattedTotalList = total.toLocaleString("en-IN", { maximumFractionDigits: 0 });
               return (
                 <Link
                   key={order.id}
@@ -338,8 +339,8 @@ export function Orders() {
                 >
                   <div className="px-3 py-2.5">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-sm text-[#131b2e] truncate flex-1">{order.customerName}</span>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="font-semibold text-sm text-[#131b2e] truncate flex-1 min-w-0">{order.customerName}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getStatusColor(order.status)}`}>
                           {order.status}
                         </span>
@@ -349,14 +350,12 @@ export function Orders() {
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-1">
-                      <span className="text-xs text-[#434655] truncate">
+                      <span className="text-xs text-[#434655] truncate flex-1 min-w-0">
                         {getProductName(order.productId)} ({order.quantity}L)
                       </span>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-xs font-semibold text-[#004ac6]">
-                          ₹{total.toFixed(2)}
-                        </span>
-                        <span className="text-xs text-[#737686]">{formatDate(order.date)}</span>
+                      <div className="flex flex-col items-end flex-shrink-0 ml-2">
+                        <span className="text-xs font-semibold text-[#004ac6]">₹{formattedTotalList}</span>
+                        <span className="text-[10px] text-[#737686]">{formatDate(order.date)}</span>
                       </div>
                     </div>
                   </div>

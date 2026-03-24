@@ -553,7 +553,7 @@ Total,₹${getOrderTotal().toFixed(2)}
               className="text-[#2563eb] text-xs font-semibold hover:text-[#004ac6] transition-colors flex items-center gap-1"
             >
               <Plus className="h-3.5 w-3.5" />
-              Add New
+              
             </Link>
           </div>
           <select
@@ -689,9 +689,9 @@ Total,₹${getOrderTotal().toFixed(2)}
           </div>
 
           {orderItems.some((i) => i.productId && i.quantity) && (
-            <div className="mt-4 pt-4 border-t border-[#c3c6d7] flex items-center justify-between">
+            <div className="mt-4 pt-4 border-t border-[#c3c6d7] flex items-center justify-between gap-3">
               <span className="font-semibold text-[#131b2e]">Order Total</span>
-              <span className="text-xl font-bold text-[#004ac6]">₹{getOrderTotal().toFixed(2)}</span>
+              <span className="text-xl font-bold text-[#004ac6] flex-shrink-0">₹{getOrderTotal().toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
             </div>
           )}
         </div>
@@ -879,19 +879,19 @@ Total,₹${getOrderTotal().toFixed(2)}
                           </p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
-                          <p className="text-xs text-[#737686]">₹{product?.pricePerLiter.toFixed(2)}/L</p>
+                          <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
+                          <p className="text-xs text-[#737686]">₹{product?.pricePerLiter}/L</p>
                         </div>
                       </div>
                     );
                   })}
-                  <div className="pt-2 border-t border-[#c3c6d7] flex items-center justify-between">
+                  <div className="pt-2 border-t border-[#c3c6d7] flex items-center justify-between gap-3">
                     <span className="font-semibold text-[#131b2e] text-sm">Total</span>
-                    <span className="font-bold text-[#004ac6]">
+                    <span className="font-bold text-[#004ac6] flex-shrink-0">
                       ₹{aiParsed.reduce((sum, item) => {
                         const product = products.find((p) => p.id === item.productId);
                         return sum + (product?.pricePerLiter ?? 0) * item.quantity;
-                      }, 0).toFixed(2)}
+                      }, 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                     </span>
                   </div>
                 </div>

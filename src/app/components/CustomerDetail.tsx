@@ -180,8 +180,8 @@ export function CustomerDetail() {
             <div className="w-14 h-14 rounded-full bg-[#eaedff] flex items-center justify-center flex-shrink-0">
               <span className="text-lg font-bold text-[#004ac6]">{getInitials(customer.name)}</span>
             </div>
-            <div>
-              <h2 className="text-xl font-bold text-[#131b2e]">{customer.name}</h2>
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold text-[#131b2e] truncate">{customer.name}</h2>
               {customer.address && (
                 <p className="text-sm text-[#737686] mt-0.5 line-clamp-1">{customer.address}</p>
               )}
@@ -226,7 +226,7 @@ export function CustomerDetail() {
                 <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center flex-shrink-0">
                   <Mail className="h-4 w-4 text-[#004ac6]" />
                 </div>
-                <span className="text-sm text-[#131b2e] group-hover:text-[#2563eb] transition-colors">
+                <span className="text-sm text-[#131b2e] group-hover:text-[#2563eb] transition-colors break-all min-w-0">
                   {customer.email}
                 </span>
               </a>
@@ -258,11 +258,11 @@ export function CustomerDetail() {
                   style={{ borderLeft: `3px solid ${getStatusBorderColor(order.status)}` }}
                 >
                   <div className="px-4 py-3">
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getStatusColor(order.status)}`}>
                         {order.status}
                       </span>
-                      <div className="flex items-center gap-1 text-[#737686]">
+                      <div className="flex items-center gap-1 text-[#737686] flex-shrink-0">
                         <Calendar className="h-3.5 w-3.5" />
                         <span className="text-xs">{formatDate(order.date)}</span>
                       </div>

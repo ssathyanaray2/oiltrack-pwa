@@ -510,6 +510,14 @@ export async function updateProductUnitSize(id: string, unitSize: number): Promi
   return mapProduct(data);
 }
 
+export async function updateProductReorderThreshold(id: string, threshold: number): Promise<Product> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { data, error } = await supabase.from('products').update({ reorder_threshold: threshold })
+    .eq('id', id).select().single();
+  if (error) throw error;
+  return mapProduct(data);
+}
+
 export async function deleteOrderItem(id: string): Promise<void> {
   if (!supabase) throw new Error("Supabase not configured");
   const { error } = await supabase.from("order_items").delete().eq("id", id);
