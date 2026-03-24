@@ -83,26 +83,39 @@ export function Orders() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Pending":
-        return "bg-accent text-accent-foreground";
+        return "bg-orange-100 text-orange-700";
       case "Delivered":
-        return "bg-primary/20 text-primary";
+        return "bg-green-100 text-green-700";
       case "Cancelled":
-        return "bg-destructive/20 text-destructive";
+        return "bg-red-100 text-red-700";
       default:
-        return "bg-muted text-muted-foreground";
+        return "bg-gray-100 text-gray-600";
+    }
+  };
+
+  const getStatusBorderColor = (status: string) => {
+    switch (status) {
+      case "Pending":
+        return "#943700";
+      case "Delivered":
+        return "#22c55e";
+      case "Cancelled":
+        return "#ba1a1a";
+      default:
+        return "#c3c6d7";
     }
   };
 
   const getPaymentStatusColor = (status: string) => {
     switch (status) {
       case "Paid":
-        return "bg-primary/20 text-primary";
+        return "bg-green-100 text-green-700";
       case "Unpaid":
-        return "bg-destructive/20 text-destructive";
+        return "bg-red-100 text-red-700";
       case "Partial":
-        return "bg-accent/30 text-accent-foreground";
+        return "bg-orange-100 text-orange-700";
       default:
-        return "bg-muted text-muted-foreground";
+        return "bg-gray-100 text-gray-600";
     }
   };
 
@@ -125,230 +138,234 @@ export function Orders() {
 
   if (loading) {
     return (
-      <div className="p-6 pb-24 max-w-2xl mx-auto">
-        <p className="text-muted-foreground">Loading orders…</p>
+      <div className="min-h-screen bg-[#faf8ff]">
+        <div className="sticky top-0 z-10 bg-white border-b border-[#c3c6d7] shadow-[0_1px_0_#c3c6d7] px-4 py-3 flex items-center justify-between">
+          <h1 className="text-lg font-bold text-[#131b2e]">Orders</h1>
+        </div>
+        <div className="p-4 pb-24 max-w-2xl mx-auto">
+          <p className="text-[#737686] text-sm mt-6">Loading orders…</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 pb-24 max-w-2xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl text-foreground mb-2">Orders</h1>
-        <p className="text-muted-foreground">View and manage orders</p>
+    <div className="min-h-screen bg-[#faf8ff]">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+        <h1 className="text-xl font-bold text-[#131b2e]">Orders</h1>
+        <Link
+          to="/orders/new"
+          className="flex items-center gap-1.5 bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
+        >
+          <Plus className="h-4 w-4" />
+          New Order
+        </Link>
       </div>
 
-      <Link
-        to="/orders/new"
-        className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl py-5 px-6 flex items-center justify-center gap-3 mb-6 shadow-md transition-all active:scale-[0.98] w-full"
-      >
-        <Plus className="h-7 w-7" />
-        <span className="text-xl">New Order</span>
-      </Link>
-
-      {pendingOrders.length > 0 && (
-        <div className="mb-6 space-y-3">
-          <div className="flex items-center gap-2 text-accent-foreground">
-            <Clock className="h-4 w-4" />
-            <span className="text-sm font-medium">
-              {pendingOrders.length} order{pendingOrders.length > 1 ? "s" : ""} pending sync
-            </span>
+      <div className="px-5 pt-4 pb-24 space-y-4">
+        {/* Pending sync banner */}
+        {pendingOrders.length > 0 && (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+            <div className="flex items-center gap-2 text-orange-700 mb-2">
+              <Clock className="h-4 w-4 flex-shrink-0" />
+              <span className="text-sm font-semibold">
+                {pendingOrders.length} order{pendingOrders.length > 1 ? "s" : ""} pending sync
+              </span>
+            </div>
+            <div className="space-y-2">
+              {pendingOrders.map((order) => {
+                const firstItem = order.items[0];
+                const product = products.find((p) => p.id === firstItem?.productId);
+                return (
+                  <div
+                    key={order.id}
+                    className="bg-white rounded-lg px-3 py-2 border border-orange-100 flex items-center justify-between gap-2"
+                  >
+                    <span className="text-sm font-medium text-[#131b2e] truncate">{order.customerName}</span>
+                    <span className="text-xs text-orange-600 whitespace-nowrap">
+                      {order.items.length === 1
+                        ? `${product?.name ?? "Unknown"} — ${firstItem?.quantity} L`
+                        : `${order.items.length} items`}
+                      {" · "}{order.date}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          {pendingOrders.map((order) => {
-            const firstItem = order.items[0];
-            const product = products.find((p) => p.id === firstItem?.productId);
-            return (
-              <div
-                key={order.id}
-                className="bg-accent/10 border-2 border-accent rounded-xl p-4"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-medium truncate">{order.customerName}</h3>
-                  <span className="text-xs bg-accent text-accent-foreground px-2 py-1 rounded-lg whitespace-nowrap ml-2 flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Pending sync
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {order.items.length === 1
-                    ? `${product?.name ?? "Unknown"} — ${firstItem?.quantity} L`
-                    : `${order.items.length} items`}
-                  {" · "}{order.date}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+        )}
 
-      <div className="mb-6">
+        {/* Search bar */}
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#737686]" />
           <input
             type="text"
             placeholder="Search by customer name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-6 py-4 rounded-xl border-2 border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#e2e7ff] text-[#131b2e] placeholder-[#737686] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563eb] border border-transparent"
           />
         </div>
-      </div>
 
-      <div className="mb-6 space-y-4">
-        <div className="flex gap-3">
-          <button
-            onClick={() => setViewMode("card")}
-            className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors ${
-              viewMode === "card"
-                ? "bg-primary text-primary-foreground"
-                : "bg-card border-2 border-border text-foreground"
-            }`}
-          >
-            <LayoutGrid className="h-5 w-5" />
-            <span>Card View</span>
-          </button>
-          <button
-            onClick={() => setViewMode("list")}
-            className={`flex-1 py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors ${
-              viewMode === "list"
-                ? "bg-primary text-primary-foreground"
-                : "bg-card border-2 border-border text-foreground"
-            }`}
-          >
-            <List className="h-5 w-5" />
-            <span>List View</span>
-          </button>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={() => setSortOrder(sortOrder === "recent" ? "oldest" : "recent")}
-            className="flex-1 py-3 px-4 rounded-xl bg-card border-2 border-border text-foreground flex items-center justify-center gap-2 transition-colors hover:border-primary"
-          >
-            <ArrowUpDown className="h-5 w-5" />
-            <span>{sortOrder === "recent" ? "Recent First" : "Oldest First"}</span>
-          </button>
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {(["All", "Pending", "Delivered", "Cancelled"] as StatusFilter[]).map((status) => (
+        {/* Filter chips + sort + view toggle row */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          <div className="flex gap-1.5 flex-shrink-0">
+            {(["All", "Pending", "Delivered", "Cancelled"] as StatusFilter[]).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`py-1.5 px-3 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border ${
+                  statusFilter === status
+                    ? "bg-[#004ac6] text-white border-[#004ac6]"
+                    : "bg-white text-[#434655] border-[#c3c6d7] hover:border-[#004ac6]"
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
             <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`py-2 px-4 rounded-xl whitespace-nowrap transition-colors ${
-                statusFilter === status
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-card border-2 border-border text-foreground"
-              }`}
+              onClick={() => setSortOrder(sortOrder === "recent" ? "oldest" : "recent")}
+              className="flex items-center gap-1 text-xs font-medium text-[#434655] bg-white border border-[#c3c6d7] rounded-full px-2.5 py-1.5 hover:border-[#004ac6] transition-colors whitespace-nowrap"
             >
-              {status}
+              <ArrowUpDown className="h-3 w-3" />
+              {sortOrder === "recent" ? "Recent" : "Oldest"}
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode("card")}
+              className={`p-1.5 rounded-lg border transition-colors ${
+                viewMode === "card"
+                  ? "bg-[#004ac6] text-white border-[#004ac6]"
+                  : "bg-white text-[#737686] border-[#c3c6d7]"
+              }`}
+              aria-label="Card view"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1.5 rounded-lg border transition-colors ${
+                viewMode === "list"
+                  ? "bg-[#004ac6] text-white border-[#004ac6]"
+                  : "bg-white text-[#737686] border-[#c3c6d7]"
+              }`}
+              aria-label="List view"
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
         </div>
+
+        {/* Orders */}
+        {filteredOrders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="bg-[#eaedff] rounded-full p-4 mb-3">
+              <PackageIcon className="h-8 w-8 text-[#004ac6]" />
+            </div>
+            <p className="text-[#131b2e] font-semibold mb-1">No orders found</p>
+            <p className="text-[#737686] text-sm">Try adjusting your filters or search query</p>
+          </div>
+        ) : viewMode === "card" ? (
+          <div className="space-y-3">
+            {filteredOrders.map((order) => {
+              const total = calculateOrderTotal(order.productId, order.quantity);
+              return (
+                <Link
+                  key={order.id}
+                  to={`/orders/edit/${order.id}`}
+                  className="block bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] overflow-hidden active:scale-[0.99] transition-transform"
+                  style={{ borderLeft: `4px solid ${getStatusBorderColor(order.status)}` }}
+                >
+                  <div className="p-4">
+                    {/* Customer name + total */}
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <User className="h-4 w-4 text-[#737686] flex-shrink-0" />
+                        <span className="font-bold text-[#131b2e] truncate">{order.customerName}</span>
+                      </div>
+                      <div className="flex items-center gap-0.5 flex-shrink-0">
+                        <IndianRupee className="h-3.5 w-3.5 text-[#004ac6]" />
+                        <span className="font-bold text-[#004ac6] text-sm">{total.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    {/* Product + quantity */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <PackageIcon className="h-4 w-4 text-[#737686] flex-shrink-0" />
+                      <span className="text-sm text-[#434655]">
+                        {getProductName(order.productId)} · {order.quantity} L
+                      </span>
+                    </div>
+
+                    {/* Badges + date */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex gap-1.5">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getStatusColor(order.status)}`}>
+                          {order.status}
+                        </span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getPaymentStatusColor(order.paymentStatus)}`}>
+                          {order.paymentStatus}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 text-[#737686]">
+                        <Calendar className="h-3.5 w-3.5" />
+                        <span className="text-xs">{formatDate(order.date)}</span>
+                      </div>
+                    </div>
+
+                    {order.notes && (
+                      <p className="text-xs text-[#737686] italic mt-2 pt-2 border-t border-[#f2f3ff]">
+                        {order.notes}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredOrders.map((order) => {
+              const total = calculateOrderTotal(order.productId, order.quantity);
+              return (
+                <Link
+                  key={order.id}
+                  to={`/orders/edit/${order.id}`}
+                  className="block bg-white rounded-xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] overflow-hidden active:scale-[0.99] transition-transform"
+                  style={{ borderLeft: `3px solid ${getStatusBorderColor(order.status)}` }}
+                >
+                  <div className="px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-sm text-[#131b2e] truncate flex-1">{order.customerName}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getStatusColor(order.status)}`}>
+                          {order.status}
+                        </span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getPaymentStatusColor(order.paymentStatus)}`}>
+                          {order.paymentStatus}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <span className="text-xs text-[#434655] truncate">
+                        {getProductName(order.productId)} ({order.quantity}L)
+                      </span>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-xs font-semibold text-[#004ac6]">
+                          ₹{total.toFixed(2)}
+                        </span>
+                        <span className="text-xs text-[#737686]">{formatDate(order.date)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
-
-      {viewMode === "card" ? (
-        <div className="space-y-4">
-          {filteredOrders.map((order) => {
-            const total = calculateOrderTotal(order.productId, order.quantity);
-            return (
-              <Link
-                key={order.id}
-                to={`/orders/edit/${order.id}`}
-                className="block bg-card rounded-2xl p-6 shadow-md border-2 border-border hover:border-primary transition-colors"
-              >
-                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <div className="flex gap-2">
-                    <span
-                      className={`${getStatusColor(order.status)} px-4 py-2 rounded-xl inline-block`}
-                    >
-                      {order.status}
-                    </span>
-                    <span
-                      className={`${getPaymentStatusColor(order.paymentStatus)} px-4 py-2 rounded-xl inline-block`}
-                    >
-                      {order.paymentStatus}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Calendar className="h-5 w-5" />
-                    <span>{formatDate(order.date)}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 mb-3">
-                  <User className="h-6 w-6 text-primary" />
-                  <h3>{order.customerName}</h3>
-                </div>
-
-                <div className="flex items-center gap-3 text-muted-foreground mb-3">
-                  <PackageIcon className="h-6 w-6" />
-                  <span>
-                    {getProductName(order.productId)} - {order.quantity} liters
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-3 mb-3">
-                  <IndianRupee className="h-6 w-6 text-primary" />
-                  <span className="text-xl text-foreground font-medium">{total.toFixed(2)} INR</span>
-                </div>
-
-                {order.notes && (
-                  <div className="mt-4 pt-4 border-t border-border">
-                    <p className="text-muted-foreground italic">{order.notes}</p>
-                  </div>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredOrders.map((order) => {
-            const total = calculateOrderTotal(order.productId, order.quantity);
-            return (
-              <Link
-                key={order.id}
-                to={`/orders/edit/${order.id}`}
-                className="block bg-card rounded-xl p-4 shadow border-2 border-border hover:border-primary transition-colors"
-              >
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <h3 className="font-medium truncate">{order.customerName}</h3>
-                  <div className="flex gap-2">
-                    <span
-                      className={`${getStatusColor(order.status)} px-3 py-1 rounded-lg text-sm whitespace-nowrap`}
-                    >
-                      {order.status}
-                    </span>
-                    <span
-                      className={`${getPaymentStatusColor(order.paymentStatus)} px-3 py-1 rounded-lg text-sm whitespace-nowrap`}
-                    >
-                      {order.paymentStatus}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-                  <span className="truncate">
-                    {getProductName(order.productId)} ({order.quantity}L)
-                  </span>
-                  <span className="whitespace-nowrap font-medium text-foreground">
-                    {total.toFixed(2)} INR
-                  </span>
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {formatDate(order.date)}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-
-      {filteredOrders.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground text-lg">No orders found</p>
-          <p className="text-muted-foreground mt-2">Try adjusting your filters</p>
-        </div>
-      )}
     </div>
   );
 }

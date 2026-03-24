@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
+import { useFeatureFlags } from "../../lib/featureFlags";
 import { ArrowLeft, Save, Trash2, Printer, Download, WifiOff, Plus, X, Sparkles, RotateCcw, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
@@ -29,6 +30,7 @@ export function OrderForm() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditing = !!id;
+  const { ai_order_fill } = useFeatureFlags();
   const isOnline = useOnlineStatus();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -246,10 +248,10 @@ export function OrderForm() {
       const qty = parseInt(item.quantity || "0", 10);
       return `
         <tr>
-          <td style="padding: 10px; border-bottom: 1px solid #D4A574;">${product?.name ?? ""}</td>
-          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">${qty} L</td>
-          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">&#8377;${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L</td>
-          <td style="padding: 10px; border-bottom: 1px solid #D4A574; text-align: right;">&#8377;${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7;">${product?.name ?? ""}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7; text-align: right;">${qty} L</td>
+          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7; text-align: right;">&#8377;${product?.pricePerLiter.toFixed(2) ?? "0.00"}/L</td>
+          <td style="padding: 10px; border-bottom: 1px solid #c3c6d7; text-align: right;">&#8377;${((product?.pricePerLiter ?? 0) * qty).toFixed(2)}</td>
         </tr>`;
     }).join("");
     const printContent = `
@@ -258,22 +260,22 @@ export function OrderForm() {
         <head>
           <title>Order Receipt - ${formData.customerName}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 40px; }
-            h1 { color: #C87D3A; }
-            .header { border-bottom: 3px solid #C87D3A; padding-bottom: 20px; margin-bottom: 30px; }
+            body { font-family: Arial, sans-serif; padding: 40px; background: #faf8ff; }
+            h1 { color: #2563eb; }
+            .header { border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 30px; }
             .info-row { margin: 15px 0; font-size: 16px; }
-            .label { font-weight: bold; color: #3D2817; }
+            .label { font-weight: bold; color: #131b2e; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th { background: #3D2817; color: white; padding: 10px; text-align: left; }
+            th { background: #131b2e; color: white; padding: 10px; text-align: left; }
             th:not(:first-child) { text-align: right; }
-            .total { font-size: 24px; font-weight: bold; color: #C87D3A; margin-top: 30px; padding-top: 20px; border-top: 2px solid #D4A574; }
-            .footer { margin-top: 40px; font-size: 14px; color: #6B5444; }
+            .total { font-size: 24px; font-weight: bold; color: #2563eb; margin-top: 30px; padding-top: 20px; border-top: 2px solid #c3c6d7; }
+            .footer { margin-top: 40px; font-size: 14px; color: #737686; }
           </style>
         </head>
         <body>
           <div class="header">
             <h1>Order Receipt</h1>
-            <p style="font-size: 14px; color: #6B5444;">Order ID: ${id || "NEW"}</p>
+            <p style="font-size: 14px; color: #737686;">Order ID: ${id || "NEW"}</p>
           </div>
           <div class="info-row"><span class="label">Customer:</span> ${customer.name}</div>
           <div class="info-row"><span class="label">Delivery Address:</span> ${customer.address}</div>
@@ -472,85 +474,93 @@ Total,₹${getOrderTotal().toFixed(2)}
     }
   };
 
-
   if (loading && isEditing) {
     return (
-      <div className="p-6 pb-24 max-w-2xl mx-auto">
-        <p className="text-muted-foreground">Loading order…</p>
+      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center pb-32">
+        <p className="text-[#737686]">Loading order…</p>
       </div>
     );
   }
 
   if (isEditing && id && !existingOrder && !loading) {
     return (
-      <div className="p-6 pb-24 max-w-2xl mx-auto">
-        <p className="text-muted-foreground">Order not found</p>
-        <button onClick={() => navigate("/orders")} className="mt-4 text-primary">Back to Orders</button>
+      <div className="min-h-screen bg-[#faf8ff] flex flex-col items-center justify-center pb-32 gap-4">
+        <p className="text-[#737686]">Order not found</p>
+        <button onClick={() => navigate("/orders")} className="text-[#2563eb] font-semibold">
+          Back to Orders
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="p-6 pb-24 max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[#faf8ff] pb-32">
+      {/* Sticky header */}
+      <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+        <button
+          onClick={() => navigate("/orders")}
+          className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h1 className="text-lg font-bold text-[#131b2e]">
+          {isEditing ? "Edit Order" : "New Order"}
+        </h1>
+        {isEditing ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
+            >
+              <Printer className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleExport}
+              className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="w-9" />
+        )}
+      </div>
+
+      {/* Offline banner */}
       {!isOnline && (
-        <div className="bg-accent/20 border-2 border-accent rounded-2xl p-4 mb-6 flex items-center gap-3">
-          <WifiOff className="h-6 w-6 text-accent-foreground" />
+        <div className="mx-5 mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
+          <WifiOff className="h-5 w-5 text-amber-600 flex-shrink-0" />
           <div>
-            <p className="font-medium text-accent-foreground">You're offline</p>
-            <p className="text-sm text-foreground">Orders will be saved locally and synced when you're back online</p>
+            <p className="font-semibold text-amber-800 text-sm">You're offline</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Orders will be saved locally and synced when you're back online
+            </p>
           </div>
         </div>
       )}
 
-
-      <div className="mb-8">
-        <button
-          onClick={() => navigate("/orders")}
-          className="flex items-center gap-2 text-primary mb-4 hover:text-primary/80 transition-colors py-2"
-        >
-          <ArrowLeft className="h-6 w-6" />
-          <span>Back to Orders</span>
-        </button>
-        <h1 className="text-3xl text-foreground mb-2">{isEditing ? "Edit Order" : "New Order"}</h1>
-        <p className="text-muted-foreground">{isEditing ? "Update order details" : "Create a new order"}</p>
-      </div>
-
-      {isEditing && (
-        <div className="flex gap-3 mb-6">
-          <button
-            type="button"
-            onClick={handlePrint}
-            className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 px-6 flex items-center justify-center gap-2 transition-colors active:scale-95"
-          >
-            <Printer className="h-5 w-5" />
-            <span>Print</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 px-6 flex items-center justify-center gap-2 transition-colors active:scale-95"
-          >
-            <Download className="h-5 w-5" />
-            <span>Export</span>
-          </button>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Customer */}
-        <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
+      <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+        {/* Customer section */}
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
           <div className="flex items-center justify-between mb-3">
-            <label htmlFor="customerId">Customer *</label>
-            <Link to="/customers/new" className="text-primary text-sm hover:text-primary/80 transition-colors flex items-center gap-1">
-              <Plus className="h-4 w-4" />
-              <span>Add New</span>
+            <label htmlFor="customerId" className="text-sm font-semibold text-[#131b2e]">
+              Customer <span className="text-red-500">*</span>
+            </label>
+            <Link
+              to="/customers/new"
+              className="text-[#2563eb] text-xs font-semibold hover:text-[#004ac6] transition-colors flex items-center gap-1"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add New
             </Link>
           </div>
           <select
             id="customerId"
             value={formData.customerId}
             onChange={(e) => handleCustomerChange(e.target.value)}
-            className="w-full px-5 py-4 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-4 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             required
           >
             <option value="">Select a customer</option>
@@ -561,15 +571,16 @@ Total,₹${getOrderTotal().toFixed(2)}
             ))}
           </select>
           {formData.customerId && (
-            <p className="mt-3 text-sm text-muted-foreground">
-              Delivery: {customers.find((c) => c.id === formData.customerId)?.address}
+            <p className="mt-2.5 text-xs text-[#737686] flex items-start gap-1.5">
+              <span className="font-medium text-[#434655]">Delivery:</span>
+              {customers.find((c) => c.id === formData.customerId)?.address}
             </p>
           )}
           {customerHasPreviousOrder() && (
             <button
               type="button"
               onClick={handleRepeatLastOrder}
-              className="mt-3 w-full flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-3 px-4 text-sm font-medium transition-colors active:scale-95"
+              className="mt-3 w-full flex items-center justify-center gap-2 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 px-4 text-sm font-semibold transition-colors active:scale-95"
             >
               <RotateCcw className="h-4 w-4" />
               Repeat Last Order
@@ -577,36 +588,36 @@ Total,₹${getOrderTotal().toFixed(2)}
           )}
         </div>
 
-        {/* Order Items */}
-        <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
+        {/* Order Items section */}
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="font-semibold text-lg text-foreground">Oil Items *</h2>
-              <p className="text-sm text-muted-foreground">Select oil type and quantity for each item</p>
+              <h2 className="font-semibold text-[#131b2e]">Oil Items <span className="text-red-500">*</span></h2>
+              <p className="text-xs text-[#737686] mt-0.5">Select oil type and quantity</p>
             </div>
             <div className="flex items-center gap-2">
-              {isSupabaseConfigured() && (
+              {isSupabaseConfigured() && ai_order_fill && (
                 <button
                   type="button"
                   onClick={() => setShowAIModal(true)}
-                  className="flex items-center gap-1.5 bg-accent/20 hover:bg-accent/30 text-accent-foreground rounded-xl px-4 py-2.5 text-sm font-medium transition-colors active:scale-95"
+                  className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95"
                 >
-                  <Sparkles className="h-4 w-4" />
+                  <Sparkles className="h-3.5 w-3.5" />
                   AI Fill
                 </button>
               )}
               <button
                 type="button"
                 onClick={addItem}
-                className="flex items-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl px-4 py-2.5 text-sm font-medium transition-colors active:scale-95"
+                className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
                 Add Item
               </button>
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             {orderItems.map((item, index) => {
               const selectedProduct = products.find((p) => p.id === item.productId);
               const qty = parseInt(item.quantity || "0", 10);
@@ -615,19 +626,19 @@ Total,₹${getOrderTotal().toFixed(2)}
               return (
                 <div
                   key={index}
-                  className="border-2 border-border rounded-xl p-4 bg-background"
+                  className="bg-[#f2f3ff] rounded-xl p-4"
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    <span className="text-xs font-semibold text-[#737686] uppercase tracking-wide">
                       Item {index + 1}
                     </span>
                     {index > 0 && (
                       <button
                         type="button"
                         onClick={() => removeItem(index)}
-                        className="flex items-center gap-1 text-destructive hover:text-destructive/80 text-sm transition-colors"
+                        className="flex items-center gap-1 text-red-500 hover:text-red-600 text-xs font-medium transition-colors"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-3.5 w-3.5" />
                         Remove
                       </button>
                     )}
@@ -637,7 +648,7 @@ Total,₹${getOrderTotal().toFixed(2)}
                     <select
                       value={item.productId}
                       onChange={(e) => updateItem(index, "productId", e.target.value)}
-                      className="w-full px-4 py-3 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm"
                       required
                     >
                       <option value="">Select oil type</option>
@@ -655,19 +666,19 @@ Total,₹${getOrderTotal().toFixed(2)}
                         value={item.quantity}
                         onChange={(e) => updateItem(index, "quantity", e.target.value)}
                         placeholder="Quantity (L)"
-                        className="flex-1 px-4 py-3 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+                        className="flex-1 px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm placeholder:text-[#737686]"
                         required
                       />
                       {item.productId && item.quantity && (
                         <div className="text-right min-w-[90px]">
-                          <p className="text-xs text-muted-foreground">Subtotal</p>
-                          <p className="font-semibold text-foreground">${subtotal.toFixed(2)}</p>
+                          <p className="text-xs text-[#737686]">Subtotal</p>
+                          <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
                         </div>
                       )}
                     </div>
 
                     {selectedProduct && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-[#737686]">
                         Stock available: {selectedProduct.stock} L
                       </p>
                     )}
@@ -678,34 +689,39 @@ Total,₹${getOrderTotal().toFixed(2)}
           </div>
 
           {orderItems.some((i) => i.productId && i.quantity) && (
-            <div className="mt-4 pt-4 border-t-2 border-border flex items-center justify-between">
-              <span className="font-semibold text-foreground">Order Total</span>
-              <span className="text-xl font-bold text-primary">₹{getOrderTotal().toFixed(2)}</span>
+            <div className="mt-4 pt-4 border-t border-[#c3c6d7] flex items-center justify-between">
+              <span className="font-semibold text-[#131b2e]">Order Total</span>
+              <span className="text-xl font-bold text-[#004ac6]">₹{getOrderTotal().toFixed(2)}</span>
             </div>
           )}
         </div>
 
         {/* Date */}
-        <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
-          <label htmlFor="date" className="block mb-3">Date *</label>
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+          <label htmlFor="date" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+            Date <span className="text-red-500">*</span>
+          </label>
           <input
             id="date"
             type="date"
             value={formData.date}
             onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-            className="w-full px-5 py-4 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             required
           />
         </div>
 
+        {/* Order Status (edit only) */}
         {isEditing && (
-          <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
-            <label htmlFor="status" className="block mb-3">Order Status</label>
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+            <label htmlFor="status" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              Order Status
+            </label>
             <select
               id="status"
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value as Order["status"] })}
-              className="w-full px-5 py-4 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             >
               <option value="Pending">Pending</option>
               <option value="Delivered">Delivered</option>
@@ -714,14 +730,17 @@ Total,₹${getOrderTotal().toFixed(2)}
           </div>
         )}
 
+        {/* Payment Status (edit only) */}
         {isEditing && (
-          <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
-            <label htmlFor="paymentStatus" className="block mb-3">Payment Status</label>
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+            <label htmlFor="paymentStatus" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              Payment Status
+            </label>
             <select
               id="paymentStatus"
               value={formData.paymentStatus}
               onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value as Order["paymentStatus"] })}
-              className="w-full px-5 py-4 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
             >
               <option value="Unpaid">Unpaid</option>
               <option value="Partial">Partial</option>
@@ -730,35 +749,39 @@ Total,₹${getOrderTotal().toFixed(2)}
           </div>
         )}
 
-        <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border">
-          <label htmlFor="notes" className="block mb-3">Notes</label>
+        {/* Notes */}
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+          <label htmlFor="notes" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+            Notes
+          </label>
           <textarea
             id="notes"
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
             placeholder="Add any special instructions or notes"
             rows={4}
-            className="w-full px-5 py-4 bg-input-background border-2 border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+            className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white text-[#131b2e] placeholder:text-[#737686] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 resize-none"
           />
         </div>
 
-        <div className="space-y-3">
+        {/* Submit + Delete */}
+        <div className="space-y-3 px-5">
           <button
             type="submit"
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl py-5 px-6 flex items-center justify-center gap-3 shadow-md transition-all active:scale-[0.98]"
+            className="w-full bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-2xl py-4 font-semibold text-base flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
           >
-            <Save className="h-6 w-6" />
-            <span className="text-xl">{isEditing ? "Save Changes" : "Create Order"}</span>
+            <Save className="h-5 w-5" />
+            {isEditing ? "Save Changes" : "Create Order"}
           </button>
 
           {isEditing && (
             <button
               type="button"
               onClick={handleDelete}
-              className="w-full bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-2xl py-5 px-6 flex items-center justify-center gap-3 shadow-md transition-all active:scale-[0.98]"
+              className="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-2xl py-4 font-semibold text-base flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
             >
-              <Trash2 className="h-6 w-6" />
-              <span className="text-xl">Delete Order</span>
+              <Trash2 className="h-5 w-5" />
+              Delete Order
             </button>
           )}
         </div>
@@ -767,25 +790,28 @@ Total,₹${getOrderTotal().toFixed(2)}
       {/* ── AI ORDER PARSER MODAL ─────────────────────────────────── */}
       {showAIModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50 p-4 pb-8">
-          <div className="bg-card rounded-2xl w-full max-w-lg shadow-xl border-2 border-border">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-[0_4px_16px_rgba(0,74,198,0.12)]">
 
             {/* Header */}
-            <div className="p-5 border-b border-border flex items-center justify-between">
+            <div className="p-5 border-b border-[#c3c6d7] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-semibold text-foreground">
+                <Sparkles className="h-5 w-5 text-[#004ac6]" />
+                <h2 className="text-base font-bold text-[#131b2e]">
                   {aiStep === "input" ? "Describe the Order" : "Confirm Items"}
                 </h2>
               </div>
-              <button onClick={closeAIModal} className="text-muted-foreground hover:text-foreground">
-                <X className="h-5 w-5" />
+              <button
+                onClick={closeAIModal}
+                className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#f2f3ff] text-[#737686] hover:bg-[#eaedff] transition-colors"
+              >
+                <X className="h-4 w-4" />
               </button>
             </div>
 
             {aiStep === "input" ? (
               <>
                 <div className="p-5 space-y-3">
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-[#737686]">
                     Type or paste the order in plain text — e.g. a WhatsApp message or a spoken description.
                   </p>
                   <textarea
@@ -794,14 +820,14 @@ Total,₹${getOrderTotal().toFixed(2)}
                     onChange={(e) => setAIText(e.target.value)}
                     placeholder={"e.g. \"10L groundnut, 5 sunflower oil, coconut 3 litres, 20L palm\""}
                     rows={5}
-                    className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary transition-colors resize-none"
+                    className="w-full rounded-xl border border-[#c3c6d7] bg-[#f2f3ff] px-4 py-3 text-sm text-[#131b2e] placeholder:text-[#737686] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 transition-colors resize-none"
                   />
                 </div>
-                <div className="p-4 flex gap-3 border-t border-border">
+                <div className="p-4 flex gap-3 border-t border-[#c3c6d7]">
                   <button
                     type="button"
                     onClick={closeAIModal}
-                    className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-3 transition-colors"
+                    className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 font-semibold text-sm transition-colors"
                   >
                     Cancel
                   </button>
@@ -809,7 +835,7 @@ Total,₹${getOrderTotal().toFixed(2)}
                     type="button"
                     onClick={handleAIParse}
                     disabled={aiParsing || !aiText.trim()}
-                    className="flex-1 bg-primary hover:bg-primary/90 disabled:opacity-60 text-primary-foreground rounded-xl py-3 flex items-center justify-center gap-2 transition-colors"
+                    className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] disabled:opacity-60 text-white rounded-xl py-3 flex items-center justify-center gap-2 font-semibold text-sm transition-colors"
                   >
                     {aiParsing ? (
                       <>
@@ -831,7 +857,7 @@ Total,₹${getOrderTotal().toFixed(2)}
             ) : (
               <>
                 <div className="p-5 space-y-3 max-h-[50vh] overflow-y-auto">
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-[#737686]">
                     AI matched {aiParsed.length} item{aiParsed.length !== 1 ? "s" : ""}. Review before applying.
                   </p>
                   {aiParsed.map((item, i) => {
@@ -840,28 +866,28 @@ Total,₹${getOrderTotal().toFixed(2)}
                     const subtotal = (product?.pricePerLiter ?? 0) * item.quantity;
                     const containers = unitSize > 1 ? Math.ceil(item.quantity / unitSize) : null;
                     return (
-                      <div key={i} className="rounded-xl border-2 border-border bg-background p-4 flex items-center justify-between gap-3">
+                      <div key={i} className="rounded-xl border border-[#c3c6d7] bg-[#f2f3ff] p-4 flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-medium text-foreground truncate">{item.productName}</p>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="font-semibold text-[#131b2e] truncate text-sm">{item.productName}</p>
+                          <p className="text-xs text-[#737686] mt-0.5">
                             {item.quantity} L
                             {containers && (
-                              <span className="ml-1 text-xs text-primary">
+                              <span className="ml-1 text-[#004ac6] font-medium">
                                 ({containers} × {unitSize}L)
                               </span>
                             )}
                           </p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="font-semibold text-foreground">₹{subtotal.toFixed(2)}</p>
-                          <p className="text-xs text-muted-foreground">₹{product?.pricePerLiter.toFixed(2)}/L</p>
+                          <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
+                          <p className="text-xs text-[#737686]">₹{product?.pricePerLiter.toFixed(2)}/L</p>
                         </div>
                       </div>
                     );
                   })}
-                  <div className="pt-2 border-t border-border flex items-center justify-between">
-                    <span className="font-semibold text-foreground">Total</span>
-                    <span className="font-bold text-primary text-lg">
+                  <div className="pt-2 border-t border-[#c3c6d7] flex items-center justify-between">
+                    <span className="font-semibold text-[#131b2e] text-sm">Total</span>
+                    <span className="font-bold text-[#004ac6]">
                       ₹{aiParsed.reduce((sum, item) => {
                         const product = products.find((p) => p.id === item.productId);
                         return sum + (product?.pricePerLiter ?? 0) * item.quantity;
@@ -869,18 +895,18 @@ Total,₹${getOrderTotal().toFixed(2)}
                     </span>
                   </div>
                 </div>
-                <div className="p-4 flex gap-3 border-t border-border">
+                <div className="p-4 flex gap-3 border-t border-[#c3c6d7]">
                   <button
                     type="button"
                     onClick={() => setAIStep("input")}
-                    className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-3 transition-colors"
+                    className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 font-semibold text-sm transition-colors"
                   >
                     Try Again
                   </button>
                   <button
                     type="button"
                     onClick={handleAIConfirm}
-                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-3 flex items-center justify-center gap-2 transition-colors"
+                    className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-3 flex items-center justify-center gap-2 font-semibold text-sm transition-colors"
                   >
                     <CheckCircle className="h-4 w-4" />
                     Fill Order

@@ -1,5 +1,7 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
 import type { Product, Customer, Order, OrderItem } from "./types";
+import type { FeatureFlags } from "./featureFlags";
+import { defaultFlags } from "./featureFlags";
 
 /** Map DB row to Product (schema: quantity, unit_price, reorder_threshold) */
 function mapProduct(row: Record<string, unknown>): Product {
@@ -22,7 +24,8 @@ function mapCustomer(row: Record<string, unknown>): Customer {
     name: String(row.name),
     phone: String(row.phone ?? ""),
     address: String(row.address ?? ""),
-    email: String(row.email ?? "")
+    maps_link: row.maps_link ? String(row.maps_link) : undefined,
+    email: row.email ? String(row.email) : undefined,
   };
 }
 
@@ -80,6 +83,7 @@ export async function getProduct(id: string): Promise<Product | null> {
 
 export async function createProduct(input: Omit<Product, "id">): Promise<Product> {
   if (!supabase) throw new Error("Supabase not configured");
+  const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("products")
     .insert({
@@ -90,6 +94,7 @@ export async function createProduct(input: Omit<Product, "id">): Promise<Product
       unit_price: input.pricePerLiter,
       cost_price: input.costPrice ?? 0,
       unit_size: input.unitSize ?? 1,
+      user_id: user?.id ?? null,
     })
     .select()
     .single();
@@ -149,12 +154,16 @@ export async function getCustomer(id: string): Promise<Customer | null> {
 
 export async function createCustomer(input: Omit<Customer, "id">): Promise<Customer> {
   if (!supabase) throw new Error("Supabase not configured");
+  const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("customers")
     .insert({
       name: input.name,
       phone: input.phone ?? null,
       address: input.address ?? null,
+      email: input.email ?? null,
+      maps_link: input.maps_link ?? null,
+      user_id: user?.id ?? null,
     })
     .select()
     .single();
@@ -171,6 +180,8 @@ export async function updateCustomer(
   if (input.name !== undefined) payload.name = input.name;
   if (input.phone !== undefined) payload.phone = input.phone;
   if (input.address !== undefined) payload.address = input.address;
+  if (input.email !== undefined) payload.email = input.email ?? null;
+  if (input.maps_link !== undefined) payload.maps_link = input.maps_link ?? null;
   const { data, error } = await supabase.from("customers").update(payload).eq("id", id).select().single();
   if (error) throw error;
   return mapCustomer(data);
@@ -272,6 +283,7 @@ export async function createOrder(order: {
     return sum + item.quantity * (p?.pricePerLiter ?? 0);
   }, 0);
 
+  const { data: { user } } = await supabase.auth.getUser();
   const orderPayload: Record<string, unknown> = {
     customer_id: order.customerId || null,
     customer_name: order.customerName,
@@ -279,6 +291,7 @@ export async function createOrder(order: {
     status: order.status,
     total_amount: totalAmount,
     notes: order.notes ?? null,
+    user_id: user?.id ?? null,
   };
   if (order.paymentStatus != null) orderPayload.payment_status = order.paymentStatus;
 
@@ -501,5 +514,46 @@ export async function deleteOrderItem(id: string): Promise<void> {
   if (!supabase) throw new Error("Supabase not configured");
   const { error } = await supabase.from("order_items").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ── FEATURE FLAGS ────────────────────────────────────────────────────────────
+
+/**
+ * Fetches feature flags for the current user.
+ * If no row exists yet (new user), inserts a default row and returns defaults.
+ */
+export async function getFeatureFlags(): Promise<FeatureFlags> {
+  if (!isSupabaseConfigured() || !supabase) return defaultFlags;
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return defaultFlags;
+
+  const { data, error } = await supabase
+    .from("feature_flags")
+    .select("ai_price_update, ai_order_fill")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Failed to fetch feature flags:", error);
+    return defaultFlags;
+  }
+
+  // No row yet — first login. Insert defaults.
+  if (!data) {
+    const { data: inserted, error: insertError } = await supabase
+      .from("feature_flags")
+      .insert({ user_id: user.id, ...defaultFlags })
+      .select("ai_price_update, ai_order_fill")
+      .single();
+
+    if (insertError) {
+      console.error("Failed to create feature flags:", insertError);
+      return defaultFlags;
+    }
+    return inserted as FeatureFlags;
+  }
+
+  return data as FeatureFlags;
 }
 

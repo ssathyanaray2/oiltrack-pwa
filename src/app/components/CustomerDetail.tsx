@@ -71,127 +71,218 @@ export function CustomerDetail() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Pending":
-        return "bg-accent text-accent-foreground";
+        return "bg-orange-100 text-orange-700";
       case "Delivered":
-        return "bg-primary/20 text-primary";
+        return "bg-green-100 text-green-700";
       case "Cancelled":
-        return "bg-destructive/20 text-destructive";
+        return "bg-red-100 text-red-700";
       default:
-        return "bg-muted text-muted-foreground";
+        return "bg-gray-100 text-gray-600";
+    }
+  };
+
+  const getStatusBorderColor = (status: string) => {
+    switch (status) {
+      case "Pending":
+        return "#943700";
+      case "Delivered":
+        return "#22c55e";
+      case "Cancelled":
+        return "#ba1a1a";
+      default:
+        return "#c3c6d7";
     }
   };
 
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
+  const getInitials = (name: string) =>
+    name
+      .split(" ")
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase();
+
   if (loading) {
     return (
-      <div className="p-6 pb-24 max-w-2xl mx-auto">
-        <p className="text-muted-foreground">Loading…</p>
+      <div className="min-h-screen bg-[#faf8ff]">
+        <div className="sticky top-0 z-10 bg-white border-b border-[#c3c6d7] shadow-[0_1px_0_#c3c6d7] px-4 py-3 flex items-center gap-3">
+          <button
+            onClick={() => navigate("/customers")}
+            className="p-1.5 rounded-lg text-[#434655] hover:bg-[#f2f3ff] transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <span className="text-base font-bold text-[#131b2e]">Customer</span>
+        </div>
+        <div className="p-4 pb-24 max-w-2xl mx-auto">
+          <p className="text-[#737686] text-sm mt-6">Loading…</p>
+        </div>
       </div>
     );
   }
 
   if (!customer) {
     return (
-      <div className="p-6 pb-24 max-w-2xl mx-auto">
-        <p className="text-center text-muted-foreground">Customer not found</p>
-        <button onClick={() => navigate("/customers")} className="mt-4 text-primary">
-          Back to Customers
-        </button>
+      <div className="min-h-screen bg-[#faf8ff]">
+        <div className="sticky top-0 z-10 bg-white border-b border-[#c3c6d7] shadow-[0_1px_0_#c3c6d7] px-4 py-3 flex items-center gap-3">
+          <button
+            onClick={() => navigate("/customers")}
+            className="p-1.5 rounded-lg text-[#434655] hover:bg-[#f2f3ff] transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <span className="text-base font-bold text-[#131b2e]">Customer</span>
+        </div>
+        <div className="p-4 pb-24 max-w-2xl mx-auto flex flex-col items-center justify-center py-16 text-center">
+          <div className="bg-[#eaedff] rounded-full p-4 mb-3">
+            <User className="h-8 w-8 text-[#004ac6]" />
+          </div>
+          <p className="text-[#131b2e] font-semibold mb-1">Customer not found</p>
+          <button
+            onClick={() => navigate("/customers")}
+            className="mt-3 text-sm text-[#2563eb] font-semibold hover:underline"
+          >
+            Back to Customers
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 pb-24 max-w-2xl mx-auto">
-      <button
-        onClick={() => navigate("/customers")}
-        className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
-      >
-        <ArrowLeft className="h-5 w-5" />
-        <span>Back to Customers</span>
-      </button>
+    <div className="min-h-screen bg-[#faf8ff]">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 bg-white border-b border-[#c3c6d7] shadow-[0_1px_0_#c3c6d7] px-4 py-3 flex items-center gap-3">
+        <button
+          onClick={() => navigate("/customers")}
+          className="p-1.5 rounded-lg text-[#434655] hover:bg-[#f2f3ff] transition-colors flex-shrink-0"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <span className="text-base font-bold text-[#131b2e] flex-1 truncate">{customer.name}</span>
+        <Link
+          to={`/customers/edit/${customer.id}`}
+          className="flex items-center gap-1.5 bg-[#2563eb] hover:bg-[#004ac6] text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors active:scale-[0.97] flex-shrink-0"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </Link>
+      </div>
 
-      <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border mb-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-primary/10 p-4 rounded-xl">
-              <User className="h-8 w-8 text-primary" />
+      <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
+        {/* Customer Info Card */}
+        <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] p-5">
+          {/* Avatar + name */}
+          <div className="flex items-center gap-4 mb-5">
+            <div className="w-14 h-14 rounded-full bg-[#eaedff] flex items-center justify-center flex-shrink-0">
+              <span className="text-lg font-bold text-[#004ac6]">{getInitials(customer.name)}</span>
             </div>
-            <h1 className="text-3xl">{customer.name}</h1>
+            <div>
+              <h2 className="text-xl font-bold text-[#131b2e]">{customer.name}</h2>
+              {customer.address && (
+                <p className="text-sm text-[#737686] mt-0.5 line-clamp-1">{customer.address}</p>
+              )}
+            </div>
           </div>
-          <Link
-            to={`/customers/edit/${customer.id}`}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-3 px-4 flex items-center gap-2"
-          >
-            <Pencil className="h-5 w-5" />
-            <span>Edit</span>
-          </Link>
+
+          {/* Contact rows */}
+          <div className="space-y-0 divide-y divide-[#f2f3ff]">
+            {customer.phone && (
+              <a
+                href={formatPhoneLink(customer.phone)}
+                className="flex items-center gap-3 py-3 group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center flex-shrink-0">
+                  <Phone className="h-4 w-4 text-[#004ac6]" />
+                </div>
+                <span className="text-sm text-[#131b2e] group-hover:text-[#2563eb] transition-colors">
+                  {customer.phone}
+                </span>
+              </a>
+            )}
+            {customer.address && (
+              <a
+                href={formatMapsLink(customer.address)}
+                className="flex items-center gap-3 py-3 group"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center flex-shrink-0">
+                  <MapPin className="h-4 w-4 text-[#004ac6]" />
+                </div>
+                <span className="text-sm text-[#131b2e] group-hover:text-[#2563eb] transition-colors line-clamp-2">
+                  {customer.address}
+                </span>
+              </a>
+            )}
+            {customer.email && (
+              <a
+                href={`mailto:${customer.email}`}
+                className="flex items-center gap-3 py-3 group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-[#eaedff] flex items-center justify-center flex-shrink-0">
+                  <Mail className="h-4 w-4 text-[#004ac6]" />
+                </div>
+                <span className="text-sm text-[#131b2e] group-hover:text-[#2563eb] transition-colors">
+                  {customer.email}
+                </span>
+              </a>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 text-foreground">
-            <Phone className="h-5 w-5 text-primary flex-shrink-0" />
-            <a href={formatPhoneLink(customer.phone)} className="hover:text-primary transition-colors">
-              <span>{customer.phone}</span>
-            </a>
-          </div>
-          <div className="flex items-center gap-3 text-foreground">
-            <MapPin className="h-5 w-5 text-primary flex-shrink-0" />
-            <a href={formatMapsLink(customer.address)} className="hover:text-primary transition-colors">
-              <span>{customer.address}</span>
-            </a>
-          </div>
-          {customer.email && (
-            <div className="flex items-center gap-3 text-foreground">
-              <Mail className="h-5 w-5 text-primary flex-shrink-0" />
-              <a href={`mailto:${customer.email}`} className="hover:text-primary transition-colors">
-                {customer.email}
-              </a>
+        {/* Order History */}
+        <div>
+          <h3 className="text-base font-bold text-[#131b2e] mb-3">
+            Order History ({customerOrders.length})
+          </h3>
+
+          {customerOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+              <div className="bg-[#eaedff] rounded-full p-4 mb-3">
+                <PackageIcon className="h-7 w-7 text-[#004ac6]" />
+              </div>
+              <p className="text-[#131b2e] font-semibold text-sm">No orders yet</p>
+              <p className="text-[#737686] text-xs mt-1">Orders from this customer will appear here</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {customerOrders.map((order) => (
+                <Link
+                  key={order.id}
+                  to={`/orders/edit/${order.id}`}
+                  className="block bg-white rounded-xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] overflow-hidden active:scale-[0.99] transition-transform"
+                  style={{ borderLeft: `3px solid ${getStatusBorderColor(order.status)}` }}
+                >
+                  <div className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${getStatusColor(order.status)}`}>
+                        {order.status}
+                      </span>
+                      <div className="flex items-center gap-1 text-[#737686]">
+                        <Calendar className="h-3.5 w-3.5" />
+                        <span className="text-xs">{formatDate(order.date)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <PackageIcon className="h-4 w-4 text-[#737686] flex-shrink-0" />
+                      <span className="text-sm text-[#434655]">
+                        {getProductName(order.productId)} · {order.quantity} L
+                      </span>
+                    </div>
+                    {order.notes && (
+                      <p className="text-xs text-[#737686] italic mt-1.5">{order.notes}</p>
+                    )}
+                  </div>
+                </Link>
+              ))}
             </div>
           )}
         </div>
       </div>
-
-      <div className="mb-4">
-        <h2 className="text-2xl mb-4">Order History ({customerOrders.length})</h2>
-      </div>
-
-      {customerOrders.length === 0 ? (
-        <div className="text-center py-12 bg-card rounded-2xl border-2 border-border">
-          <p className="text-muted-foreground text-lg">No orders yet</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {customerOrders.map((order) => (
-            <Link
-              key={order.id}
-              to={`/orders/edit/${order.id}`}
-              className="block bg-card rounded-xl p-4 shadow border-2 border-border hover:border-primary transition-colors"
-            >
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <span className={`${getStatusColor(order.status)} px-3 py-1 rounded-lg text-sm`}>
-                  {order.status}
-                </span>
-                <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Calendar className="h-4 w-4" />
-                  <span>{formatDate(order.date)}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-foreground">
-                <PackageIcon className="h-5 w-5 text-primary" />
-                <span>
-                  {getProductName(order.productId)} - {order.quantity} liters
-                </span>
-              </div>
-              {order.notes && (
-                <p className="text-sm text-muted-foreground mt-2 italic">{order.notes}</p>
-              )}
-            </Link>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -18,8 +18,12 @@ export async function extractPricesFromImage(
 ): Promise<PriceChange[]> {
   if (!supabase) throw new Error("Supabase is not configured");
 
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error("Not authenticated");
+
   const { data, error } = await supabase.functions.invoke("analyze-price-image", {
     body: { imageBase64, mimeType, products },
+    headers: { Authorization: `Bearer ${session.access_token}` },
   });
 
   if (error) throw new Error(error.message);

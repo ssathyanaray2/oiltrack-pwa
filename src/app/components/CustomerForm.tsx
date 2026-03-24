@@ -147,158 +147,163 @@ export function CustomerForm() {
 
   if (loading) {
     return (
-      <div className="p-6 pb-24 max-w-2xl mx-auto">
-        <p className="text-muted-foreground">Loading…</p>
+      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center pb-32">
+        <p className="text-[#737686]">Loading…</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 pb-24 max-w-2xl mx-auto">
+    <div className="min-h-screen bg-[#faf8ff] pb-32">
+      {/* Sticky header */}
+      <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+        <button
+          onClick={() => navigate("/customers")}
+          className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h1 className="text-lg font-bold text-[#131b2e]">
+          {isEditing ? "Edit Customer" : "Add Customer"}
+        </h1>
+        <div className="w-9" />
+      </div>
+
+      {/* Offline banner */}
       {!isOnline && (
-        <div className="bg-accent/20 border-2 border-accent rounded-2xl p-4 mb-6 flex items-center gap-3">
-          <WifiOff className="h-6 w-6 text-accent-foreground flex-shrink-0" />
+        <div className="mx-5 mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
+          <WifiOff className="h-5 w-5 text-amber-600 flex-shrink-0" />
           <div>
-            <p className="font-medium text-accent-foreground">You're offline</p>
-            <p className="text-sm text-foreground">Customer will be saved locally and synced automatically when you're back online</p>
+            <p className="font-semibold text-amber-800 text-sm">You're offline</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Customer will be saved locally and synced automatically when you're back online
+            </p>
           </div>
         </div>
       )}
-      <button
-        onClick={() => navigate("/customers")}
-        className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
-      >
-        <ArrowLeft className="h-5 w-5" />
-        <span>Back to Customers</span>
-      </button>
 
-      <div className="mb-8">
-        <h1 className="text-3xl text-foreground mb-2">
-          {isEditing ? "Edit Customer" : "Add New Customer"}
-        </h1>
-        <p className="text-muted-foreground">
-          {isEditing ? "Update customer information" : "Enter customer information"}
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
-          <label htmlFor="name" className="block mb-3 text-foreground">
-            Customer Name *
-          </label>
-          <input
-            type="text"
-            id="name"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            className="w-full px-6 py-4 rounded-xl border-2 border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="Enter customer name"
-            required
-          />
-        </div>
-
-        <div>
-          <label htmlFor="phone" className="block mb-3 text-foreground">
-            Phone Number *
-          </label>
-          <input
-            type="tel"
-            id="phone"
-            name="phone"
-            value={formData.phone}
-            onChange={handleChange}
-            className="w-full px-6 py-4 rounded-xl border-2 border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="+1 (555) 123-4567"
-            required
-          />
-        </div>
-
-        <div>
-          <label htmlFor="address" className="block mb-3 text-foreground">
-            Delivery Address *
-          </label>
-          <textarea
-            id="address"
-            name="address"
-            value={formData.address}
-            onChange={handleChange}
-            className="w-full px-6 py-4 rounded-xl border-2 border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-            placeholder="Enter delivery address"
-            rows={3}
-            required
-          />
-        </div>
-
-
-        {/* Maps Link */}
-        <div>
-          <label className="block mb-2 text-foreground font-medium">
-            Google Maps Link
-          </label>
-          <div className="flex gap-2">
+      {/* Form card */}
+      <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 mt-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Name */}
+          <div>
+            <label htmlFor="name" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              Customer Name <span className="text-red-500">*</span>
+            </label>
             <input
-              type="url"
-              value={formData.maps_link ?? ''}
-              onChange={e => setFormData(prev => ({ 
-                ...prev, maps_link: e.target.value 
-              }))}
-              className="flex-1 px-4 py-3 rounded-xl border-2 border-border 
-                        bg-background focus:outline-none focus:ring-2 
-                        focus:ring-primary text-base"
-              placeholder="Paste Google Maps link here"
+              type="text"
+              id="name"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
+              placeholder="Enter customer name"
+              required
             />
-            {/* Paste button — super handy on mobile */}
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const text = await navigator.clipboard.readText()
-                  if (text.includes('maps.google') || 
-                      text.includes('goo.gl/maps') || 
-                      text.includes('maps.app.goo.gl')) {
-                    setFormData(prev => ({ ...prev, maps_link: text }))
-                    toast.success('Maps link pasted!')
-                  } else {
-                    toast.error('That doesn\'t look like a Maps link')
-                  }
-                } catch {
-                  toast.error('Could not read clipboard')
-                }
-              }}
-              className="bg-secondary px-4 py-3 rounded-xl border-2 
-                        border-border font-medium text-secondary-foreground"
-            >
-              Paste
-            </button>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Open Google Maps → Share → Copy Link → Paste here
-          </p>
-        </div>
 
-        <div>
-          <label htmlFor="email" className="block mb-3 text-foreground">
-            Email (Optional)
-          </label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            className="w-full px-6 py-4 rounded-xl border-2 border-border bg-card focus:outline-none focus:ring-2 focus:ring-primary"
-            placeholder="customer@email.com"
-          />
-        </div>
+          {/* Phone */}
+          <div>
+            <label htmlFor="phone" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              Phone Number <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="tel"
+              id="phone"
+              name="phone"
+              value={formData.phone}
+              onChange={handleChange}
+              className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
+              placeholder="+1 (555) 123-4567"
+              required
+            />
+          </div>
 
-        <button
-          type="submit"
-          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl py-5 px-6 shadow-md transition-all active:scale-[0.98]"
-        >
-          {isEditing ? "Save Changes" : "Add Customer"}
-        </button>
-      </form>
+          {/* Address */}
+          <div>
+            <label htmlFor="address" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              Delivery Address <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              id="address"
+              name="address"
+              value={formData.address}
+              onChange={handleChange}
+              className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686] resize-none"
+              placeholder="Enter delivery address"
+              rows={3}
+              required
+            />
+          </div>
+
+          {/* Maps Link */}
+          <div>
+            <label className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              Google Maps Link
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={formData.maps_link ?? ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, maps_link: e.target.value }))}
+                className="flex-1 px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
+                placeholder="Paste Google Maps link here"
+              />
+              {/* Paste button — super handy on mobile */}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const text = await navigator.clipboard.readText();
+                    if (
+                      text.includes("maps.google") ||
+                      text.includes("goo.gl/maps") ||
+                      text.includes("maps.app.goo.gl")
+                    ) {
+                      setFormData((prev) => ({ ...prev, maps_link: text }));
+                      toast.success("Maps link pasted!");
+                    } else {
+                      toast.error("That doesn't look like a Maps link");
+                    }
+                  } catch {
+                    toast.error("Could not read clipboard");
+                  }
+                }}
+                className="bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] px-4 py-3.5 rounded-xl border border-[#c3c6d7] font-semibold text-sm transition-colors active:scale-95 whitespace-nowrap"
+              >
+                Paste
+              </button>
+            </div>
+            <p className="text-xs text-[#737686] mt-1.5">
+              Open Google Maps → Share → Copy Link → Paste here
+            </p>
+          </div>
+
+          {/* Email */}
+          <div>
+            <label htmlFor="email" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              Email <span className="text-[#737686] font-normal">(Optional)</span>
+            </label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
+              placeholder="customer@email.com"
+            />
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            className="w-full bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-2xl py-4 font-semibold text-base transition-colors active:scale-[0.98] mt-2"
+          >
+            {isEditing ? "Save Changes" : "Add Customer"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

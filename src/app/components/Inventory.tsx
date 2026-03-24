@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown } from "lucide-react";
+import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown, Search } from "lucide-react";
+import { useFeatureFlags } from "../../lib/featureFlags";
 import { toast } from "sonner";
 import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice, updateProductUnitSize } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
@@ -10,8 +11,11 @@ import type { Product } from "../../lib/types";
 import { products as mockProducts } from "../data/mockData";
 import React from "react";
 
+type FilterOption = "all" | "low" | "in" | "out";
+
 export function Inventory() {
   const isOnline = useOnlineStatus();
+  const { ai_price_update } = useFeatureFlags();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -23,8 +27,9 @@ export function Inventory() {
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
   const [confirming, setConfirming] = useState(false);
-
   const [alertExpanded, setAlertExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<FilterOption>("all");
 
   // Price-update-from-image state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,156 +80,85 @@ export function Inventory() {
     setConfirming(false);
   };
 
-  // ── CONFIRM HANDLER ───────────────────────────────────────────────
   const handleConfirm = async () => {
     if (!modalData || confirming) return;
     setConfirming(true);
     try {
-
-    // ── PRICE PER LITER UPDATE ──────────────────────────────────────
-    if (modalData.action === "pricePerLiter") {
-      const newPrice = parseFloat(inputAmount);
-      if (isNaN(newPrice) || newPrice <= 0) {
-        toast.error("Please enter a valid price");
-        return;
-      }
-
-      if (isSupabaseConfigured() && isOnline) {
-        try {
-          const updated = await updateProductUnitPrice(modalData.productId, newPrice);
-          setProducts((prev) =>
-            prev.map((p) => (p.id === updated.id ? updated : p))
-          );
-          setCachedProducts(
-            products.map((p) =>
-              p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p
-            )
-          );
-          toast.success(`Price updated to ₹${newPrice} for ${modalData.productName}`);
-        } catch (e) {
-          toast.error("Failed to update price");
-          console.error(e);
+      if (modalData.action === "pricePerLiter") {
+        const newPrice = parseFloat(inputAmount);
+        if (isNaN(newPrice) || newPrice <= 0) { toast.error("Please enter a valid price"); return; }
+        if (isSupabaseConfigured() && isOnline) {
+          try {
+            const updated = await updateProductUnitPrice(modalData.productId, newPrice);
+            setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+            setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p));
+            toast.success(`Price updated to ₹${newPrice} for ${modalData.productName}`);
+          } catch (e) { toast.error("Failed to update price"); console.error(e); }
+        } else {
+          const next = products.map((p) => p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p);
+          setProducts(next); setCachedProducts(next);
+          toast.success(`Price updated to ₹${newPrice} (saved locally)`);
         }
-      } else {
-        // Offline: update locally
-        const next = products.map((p) =>
-          p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p
-        );
-        setProducts(next);
-        setCachedProducts(next);
-        toast.success(`Price updated to ₹${newPrice} (saved locally)`);
+        closeModal(); return;
       }
 
-      closeModal();
-      return;
-    }
-
-    // ── COST PRICE UPDATE ───────────────────────────────────────────
-    if (modalData.action === "costPrice") {
-      const newPrice = parseFloat(inputAmount);
-      if (isNaN(newPrice) || newPrice <= 0) {
-        toast.error("Please enter a valid price");
-        return;
+      if (modalData.action === "costPrice") {
+        const newPrice = parseFloat(inputAmount);
+        if (isNaN(newPrice) || newPrice <= 0) { toast.error("Please enter a valid price"); return; }
+        if (isSupabaseConfigured() && isOnline) {
+          try {
+            const updated = await updateProductCostPrice(modalData.productId, newPrice);
+            setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+            setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, costPrice: newPrice } : p));
+            toast.success(`Cost price updated to ₹${newPrice} for ${modalData.productName}`);
+          } catch (e) { toast.error("Failed to update cost price"); console.error(e); }
+        } else {
+          const next = products.map((p) => p.id === modalData.productId ? { ...p, costPrice: newPrice } : p);
+          setProducts(next); setCachedProducts(next);
+          toast.success(`Cost price updated to ₹${newPrice} (saved locally)`);
+        }
+        closeModal(); return;
       }
+
+      if (modalData.action === "unitSize") {
+        const newSize = parseFloat(inputAmount);
+        if (isNaN(newSize) || newSize <= 0) { toast.error("Please enter a valid container size"); return; }
+        if (isSupabaseConfigured() && isOnline) {
+          try {
+            const updated = await updateProductUnitSize(modalData.productId, newSize);
+            setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+            setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, unitSize: newSize } : p));
+            toast.success(`Container size updated to ${newSize}L for ${modalData.productName}`);
+          } catch (e) { toast.error("Failed to update container size"); console.error(e); }
+        } else {
+          const next = products.map((p) => p.id === modalData.productId ? { ...p, unitSize: newSize } : p);
+          setProducts(next); setCachedProducts(next);
+          toast.success(`Container size updated to ${newSize}L (saved locally)`);
+        }
+        closeModal(); return;
+      }
+
+      const amount = parseInt(inputAmount);
+      if (isNaN(amount) || amount <= 0) { toast.error("Please enter a valid amount"); return; }
+      const change = modalData.action === "add" ? amount : -amount;
+      const product = products.find((p) => p.id === modalData.productId);
+      const newStock = product ? Math.max(0, product.stock + change) : 0;
+
       if (isSupabaseConfigured() && isOnline) {
         try {
-          const updated = await updateProductCostPrice(modalData.productId, newPrice);
+          const updated = await updateProductStock(modalData.productId, change);
           setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-          setCachedProducts(
-            products.map((p) =>
-              p.id === modalData.productId ? { ...p, costPrice: newPrice } : p
-            )
-          );
-          toast.success(`Cost price updated to ₹${newPrice} for ${modalData.productName}`);
-        } catch (e) {
-          toast.error("Failed to update cost price");
-          console.error(e);
-        }
+          setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, stock: newStock } : p));
+          const action = change > 0 ? "added to" : "removed from";
+          toast.success(`${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName}`);
+        } catch (e) { toast.error("Failed to update stock"); console.error(e); }
       } else {
-        const next = products.map((p) =>
-          p.id === modalData.productId ? { ...p, costPrice: newPrice } : p
-        );
-        setProducts(next);
-        setCachedProducts(next);
-        toast.success(`Cost price updated to ₹${newPrice} (saved locally)`);
-      }
-      closeModal();
-      return;
-    }
-
-    // ── UNIT SIZE UPDATE ────────────────────────────────────────────
-    if (modalData.action === "unitSize") {
-      const newSize = parseFloat(inputAmount);
-      if (isNaN(newSize) || newSize <= 0) {
-        toast.error("Please enter a valid container size");
-        return;
-      }
-      if (isSupabaseConfigured() && isOnline) {
-        try {
-          const updated = await updateProductUnitSize(modalData.productId, newSize);
-          setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-          setCachedProducts(
-            products.map((p) =>
-              p.id === modalData.productId ? { ...p, unitSize: newSize } : p
-            )
-          );
-          toast.success(`Container size updated to ${newSize}L for ${modalData.productName}`);
-        } catch (e) {
-          toast.error("Failed to update container size");
-          console.error(e);
-        }
-      } else {
-        const next = products.map((p) =>
-          p.id === modalData.productId ? { ...p, unitSize: newSize } : p
-        );
-        setProducts(next);
-        setCachedProducts(next);
-        toast.success(`Container size updated to ${newSize}L (saved locally)`);
-      }
-      closeModal();
-      return;
-    }
-
-    // ── STOCK ADD / REMOVE ──────────────────────────────────────────
-    const amount = parseInt(inputAmount);
-    if (isNaN(amount) || amount <= 0) {
-      toast.error("Please enter a valid amount");
-      return;
-    }
-
-    const change = modalData.action === "add" ? amount : -amount;
-    const product = products.find((p) => p.id === modalData.productId);
-    const newStock = product ? Math.max(0, product.stock + change) : 0;
-
-    if (isSupabaseConfigured() && isOnline) {
-      try {
-        const updated = await updateProductStock(modalData.productId, change);
-        setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-        setCachedProducts(
-          products.map((p) =>
-            p.id === modalData.productId ? { ...p, stock: newStock } : p
-          )
-        );
+        const next = products.map((p) => p.id === modalData.productId ? { ...p, stock: newStock } : p);
+        setProducts(next); setCachedProducts(next);
         const action = change > 0 ? "added to" : "removed from";
-        toast.success(
-          `${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName}`
-        );
-      } catch (e) {
-        toast.error("Failed to update stock");
-        console.error(e);
+        toast.success(`${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName} (saved locally)`);
       }
-    } else {
-      const next = products.map((p) =>
-        p.id === modalData.productId ? { ...p, stock: newStock } : p
-      );
-      setProducts(next);
-      setCachedProducts(next);
-      const action = change > 0 ? "added to" : "removed from";
-      toast.success(
-        `${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName} (saved locally)`
-      );
-    }
-    closeModal();
+      closeModal();
     } finally {
       setConfirming(false);
     }
@@ -235,40 +169,20 @@ export function Inventory() {
     if (!fileInputRef.current) return;
     fileInputRef.current.value = "";
     if (!file) return;
-
     const supported = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!supported.includes(file.type)) {
-      toast.error("Please upload a JPG, PNG, WebP, or GIF image");
-      return;
-    }
-
+    if (!supported.includes(file.type)) { toast.error("Please upload a JPG, PNG, WebP, or GIF image"); return; }
     setAnalyzing(true);
     toast.loading("Reading price list…", { id: "price-analysis" });
-
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1]); // strip the data:image/...;base64, prefix
-        };
+        reader.onload = () => { const result = reader.result as string; resolve(result.split(",")[1]); };
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-
-      const changes = await extractPricesFromImage(
-        base64,
-        file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
-        products
-      );
-
+      const changes = await extractPricesFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", products);
       toast.dismiss("price-analysis");
-
-      if (changes.length === 0) {
-        toast.info("No matching products or price changes found in the image");
-        return;
-      }
-
+      if (changes.length === 0) { toast.info("No matching products or price changes found in the image"); return; }
       setPriceChanges(changes);
       setShowPriceModal(true);
     } catch (err) {
@@ -288,74 +202,65 @@ export function Inventory() {
           const updated = await updateProductUnitPrice(change.productId, change.newPrice);
           setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
         } else {
-          setProducts((prev) =>
-            prev.map((p) => (p.id === change.productId ? { ...p, pricePerLiter: change.newPrice } : p))
-          );
+          setProducts((prev) => prev.map((p) => (p.id === change.productId ? { ...p, pricePerLiter: change.newPrice } : p)));
         }
       }
-      const next = products.map((p) => {
-        const change = changedOnly.find((c) => c.productId === p.id);
-        return change ? { ...p, pricePerLiter: change.newPrice } : p;
-      });
+      const next = products.map((p) => { const change = changedOnly.find((c) => c.productId === p.id); return change ? { ...p, pricePerLiter: change.newPrice } : p; });
       setCachedProducts(next);
       toast.success(`Updated prices for ${changedOnly.length} product${changedOnly.length > 1 ? "s" : ""}`);
-      setShowPriceModal(false);
-      setPriceChanges([]);
+      setShowPriceModal(false); setPriceChanges([]);
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to apply some price updates");
+      console.error(err); toast.error("Failed to apply some price updates");
     } finally {
       setApplyingPrices(false);
     }
   };
 
   const getStockStatus = (stock: number, threshold: number) => {
-    if (stock <= threshold * 0.5) {
-      return {
-        level: "critical",
-        color: "text-destructive",
-        bgColor: "bg-destructive/10",
-        borderColor: "border-destructive",
-      };
-    } else if (stock <= threshold) {
-      return {
-        level: "low",
-        color: "text-accent-foreground",
-        bgColor: "bg-accent/20",
-        borderColor: "border-accent",
-      };
-    }
-    return {
-      level: "normal",
-      color: "text-primary",
-      bgColor: "bg-primary/10",
-      borderColor: "border-border",
-    };
+    if (stock <= threshold * 0.5) return { level: "critical" as const };
+    if (stock <= threshold) return { level: "low" as const };
+    return { level: "normal" as const };
   };
 
   const lowStockProducts = products.filter((p) => p.stock <= p.lowStockThreshold);
+  const maxStock = Math.max(...products.map((p) => p.stock), 1);
+
+  const filteredProducts = products.filter((p) => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = p.name.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    const status = getStockStatus(p.stock, p.lowStockThreshold);
+    if (filter === "low") return status.level === "low" || status.level === "critical";
+    if (filter === "in") return status.level === "normal";
+    if (filter === "out") return p.stock === 0;
+    return true;
+  });
+
+  const filterOptions: { label: string; value: FilterOption }[] = [
+    { label: "All", value: "all" },
+    { label: "Low Stock", value: "low" },
+    { label: "In Stock", value: "in" },
+    { label: "Out of Stock", value: "out" },
+  ];
 
   if (loading) {
     return (
-      <div className="p-6 pb-24 max-w-2xl mx-auto">
-        <p className="text-muted-foreground">Loading inventory…</p>
+      <div className="min-h-screen bg-[#faf8ff] flex items-center justify-center">
+        <p className="text-[#434655] font-medium">Loading inventory…</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 pb-24 max-w-2xl mx-auto">
-      <div className="mb-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl text-foreground mb-2">Inventory</h1>
-            <p className="text-muted-foreground">Manage your stock levels</p>
-          </div>
+    <div className="min-h-screen bg-[#faf8ff] pb-32">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+        <h1 className="text-xl font-bold text-[#131b2e] tracking-tight">Inventory</h1>
+        {ai_price_update && (
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={analyzing}
-            className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl px-4 py-3 text-sm font-medium transition-colors active:scale-95 disabled:opacity-60 shrink-0"
-            title="Upload a price list image to auto-update selling prices"
+            className="flex items-center gap-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60"
           >
             {analyzing ? (
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -367,163 +272,195 @@ export function Inventory() {
             )}
             {analyzing ? "Analysing…" : "Update Prices"}
           </button>
+        )}
+        <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleImageUpload} />
+      </header>
+
+      <div className="px-5 max-w-2xl mx-auto">
+        {/* Search Bar */}
+        <div className="relative mt-4">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#737686]" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-[#e2e7ff] border-none rounded-xl py-3 pl-11 pr-4 text-[#131b2e] placeholder:text-[#737686] outline-none focus:ring-2 focus:ring-[#2563eb]/20 transition-all"
+            placeholder="Search product name..."
+          />
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className="hidden"
-          onChange={handleImageUpload}
-        />
-      </div>
 
-      {lowStockProducts.length > 0 && (
-        <div className="bg-accent/20 border-2 border-accent rounded-2xl mb-6 overflow-hidden">
-          <button
-            onClick={() => setAlertExpanded((prev) => !prev)}
-            className="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/10 transition-colors"
-          >
-            <AlertTriangle className="h-5 w-5 text-accent-foreground flex-shrink-0" />
-            <span className="flex-1 font-medium text-accent-foreground">
-              Low Stock Alert — {lowStockProducts.length}{" "}
-              {lowStockProducts.length === 1 ? "product needs" : "products need"} restocking
-            </span>
-            <ChevronDown
-              className={`h-5 w-5 text-accent-foreground transition-transform duration-200 ${alertExpanded ? "rotate-180" : ""}`}
-            />
-          </button>
+        {/* Filter Chips */}
+        <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1 no-scrollbar">
+          {filterOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setFilter(opt.value)}
+              className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
+                filter === opt.value
+                  ? "bg-[#004ac6] text-white"
+                  : "bg-white text-[#434655] hover:bg-[#f2f3ff] border border-[#c3c6d7]"
+              }`}
+            >
+              {opt.label}
+              {opt.value === "low" && lowStockProducts.length > 0 && (
+                <span className={`ml-1.5 w-1.5 h-1.5 rounded-full inline-block ${filter === "low" ? "bg-orange-300" : "bg-[#ba1a1a]"}`} />
+              )}
+            </button>
+          ))}
+        </div>
 
-          {alertExpanded && (
-            <ul className="px-5 pb-4 space-y-1 border-t border-accent/30 pt-3">
-              {lowStockProducts.map((product) => (
-                <li key={product.id} className="text-foreground">
-                  • {product.name}:{" "}
-                  <span className="font-medium">
-                    {product.stock} {product.unit}
-                  </span>
-                </li>
-              ))}
-            </ul>
+        {/* Low Stock Alert Banner */}
+        {lowStockProducts.length > 0 && (
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl mt-4 overflow-hidden">
+            <button
+              onClick={() => setAlertExpanded((prev) => !prev)}
+              className="w-full flex items-center gap-3 p-4 text-left hover:bg-orange-100/50 transition-colors"
+            >
+              <AlertTriangle className="h-5 w-5 text-orange-600 flex-shrink-0" />
+              <span className="flex-1 font-semibold text-orange-800 text-sm">
+                {lowStockProducts.length} {lowStockProducts.length === 1 ? "product needs" : "products need"} restocking
+              </span>
+              <ChevronDown className={`h-4 w-4 text-orange-600 transition-transform duration-200 ${alertExpanded ? "rotate-180" : ""}`} />
+            </button>
+            {alertExpanded && (
+              <ul className="px-5 pb-4 space-y-1 border-t border-orange-200 pt-3">
+                {lowStockProducts.map((p) => (
+                  <li key={p.id} className="text-sm text-orange-800">
+                    • {p.name}: <span className="font-semibold">{p.stock} {p.unit}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Product Cards */}
+        <div className="mt-5 space-y-4 mb-8">
+          {filteredProducts.length === 0 ? (
+            <div className="text-center py-12 text-[#434655]">
+              <Package className="h-10 w-10 mx-auto mb-3 text-[#c3c6d7]" />
+              <p className="font-medium">No products found</p>
+            </div>
+          ) : (
+            filteredProducts.map((product) => {
+              const status = getStockStatus(product.stock, product.lowStockThreshold);
+              const barPercent = Math.min(100, Math.round((product.stock / maxStock) * 100));
+              const borderColor = status.level === "critical" ? "#ba1a1a" : status.level === "low" ? "#943700" : "#004ac6";
+              const iconBg = status.level === "critical" ? "bg-[#ffdad6]" : status.level === "low" ? "bg-[#ffdbcd]" : "bg-[#eaedff]";
+              const iconColor = status.level === "critical" ? "text-[#ba1a1a]" : status.level === "low" ? "text-[#943700]" : "text-[#004ac6]";
+              const barColor = status.level === "critical" ? "#ba1a1a" : status.level === "low" ? "#943700" : "#004ac6";
+              const badgeBg = status.level === "critical" ? "bg-[#ffdad6] text-[#93000a]" : status.level === "low" ? "bg-[#ffdbcd] text-[#7d2d00]" : "bg-[#acbfff] text-[#394c84]";
+              const badgeLabel = status.level === "critical" ? "Critical" : status.level === "low" ? "Low Stock" : "In Stock";
+
+              return (
+                <div
+                  key={product.id}
+                  className="bg-white rounded-xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.05)] border-l-4"
+                  style={{ borderLeftColor: borderColor }}
+                >
+                  {/* Card Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${iconBg}`}>
+                        <Package className={`h-5 w-5 ${iconColor}`} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-[#131b2e] text-base leading-tight">{product.name}</h3>
+                        <p className="text-xs text-[#737686] mt-0.5">{product.unit} · {product.unitSize}L/unit</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-tight ${badgeBg}`}>
+                        {badgeLabel}
+                      </span>
+                      <button
+                        onClick={() => openModal(product.id, product.name, product.unit, "pricePerLiter")}
+                        className="p-1.5 rounded-lg text-[#737686] hover:text-[#004ac6] hover:bg-[#eaedff] transition-colors"
+                        title="Edit price"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Stock + Gauge */}
+                  <div className="grid grid-cols-2 gap-4 items-end mb-4">
+                    <div>
+                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Current Stock</p>
+                      <p className="text-2xl font-extrabold text-[#131b2e]">
+                        {product.stock.toLocaleString()} <span className="text-sm font-medium text-[#434655]">{product.unit}</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-2">Stock Level</p>
+                      <div className="h-2.5 w-full bg-[#dae2fd] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${barPercent}%`, backgroundColor: barColor }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Price Row */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => openModal(product.id, product.name, product.unit, "pricePerLiter")}
+                        className="flex items-center gap-1 group"
+                        title="Edit selling price"
+                      >
+                        <span className="text-base font-bold text-[#131b2e]">₹{product.pricePerLiter}</span>
+                        <span className="text-sm text-[#434655]">/ {product.unit.toLowerCase()}</span>
+                        <Pencil className="h-3 w-3 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                      <button
+                        onClick={() => openModal(product.id, product.name, product.unit, "costPrice")}
+                        className="flex items-center gap-1 text-xs bg-[#eaedff] text-[#004ac6] rounded-lg px-2 py-1 font-medium group hover:bg-[#dae2fd] transition-colors"
+                        title="Edit cost price"
+                      >
+                        <span>CP: ₹{product.costPrice}</span>
+                        <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Add / Remove Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => openModal(product.id, product.name, product.unit, "remove")}
+                      className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 flex items-center justify-center gap-2 transition-colors active:scale-95 text-sm font-semibold"
+                    >
+                      <Minus className="h-4 w-4" />
+                      Remove
+                    </button>
+                    <button
+                      onClick={() => openModal(product.id, product.name, product.unit, "add")}
+                      className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-3 flex items-center justify-center gap-2 transition-colors active:scale-95 text-sm font-semibold"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add
+                    </button>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
-      )}
-
-      <div className="space-y-4">
-        {products.map((product) => {
-          const stockStatus = getStockStatus(product.stock, product.lowStockThreshold);
-          return (
-            <div
-              key={product.id}
-              className={`relative bg-card rounded-2xl p-6 shadow-md border-2 ${stockStatus.borderColor}`}
-            >
-              {/* Top-right badges */}
-              <div className="absolute top-4 right-4 flex flex-col items-end gap-1.5">
-                <button
-                  onClick={() => openModal(product.id, product.name, product.unit, "costPrice")}
-                  className="flex items-center gap-1 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg px-2.5 py-1 text-sm font-medium transition-colors group"
-                  title="Tap to edit cost price"
-                >
-                  <span>CP: ₹{product.costPrice}</span>
-                  <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-                <button
-                  onClick={() => openModal(product.id, product.name, product.unit, "unitSize")}
-                  className="flex items-center gap-1 bg-muted hover:bg-muted/80 text-muted-foreground rounded-lg px-2.5 py-1 text-sm font-medium transition-colors group"
-                  title="Tap to edit container size"
-                >
-                  <span>{product.unitSize}L/unit</span>
-                  <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              </div>
-
-              <div className="flex items-start gap-4">
-                <div className={`${stockStatus.bgColor} p-4 rounded-xl`}>
-                  <Package className={`h-8 w-8 ${stockStatus.color}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3>{product.name}</h3>
-                    {stockStatus.level !== "normal" && (
-                      <AlertTriangle className={`h-5 w-5 ${stockStatus.color} flex-shrink-0 mt-6`} />
-                    )}
-                  </div>
-
-                  {/* Stock */}
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <p className={`text-2xl ${stockStatus.color}`}>{product.stock}</p>
-                    <p className="text-muted-foreground">{product.unit}</p>
-                  </div>
-
-                  {/* Price per liter — tap to edit ✏️ */}
-                  <button
-                    onClick={() =>
-                      openModal(product.id, product.name, product.unit, "pricePerLiter")
-                    }
-                    className="flex items-center gap-2 group mt-1 hover:opacity-80 transition-opacity"
-                    title="Tap to edit price"
-                  >
-                    <p className={`text-2xl ${stockStatus.color}`}>
-                      ₹{product.pricePerLiter}
-                    </p>
-                    <p className="text-muted-foreground">per {product.unit.toLowerCase()}</p>
-                    <Pencil className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </button>
-
-                  {stockStatus.level !== "normal" && (
-                    <p className={`text-sm mt-2 ${stockStatus.color}`}>
-                      {stockStatus.level === "critical"
-                        ? "Critical: Restock immediately"
-                        : "Low stock: Restock soon"}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => openModal(product.id, product.name, product.unit, "remove")}
-                  className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 px-6 flex items-center justify-center gap-2 transition-colors active:scale-95"
-                >
-                  <Minus className="h-6 w-6" />
-                  <span>Remove</span>
-                </button>
-                <button
-                  onClick={() => openModal(product.id, product.name, product.unit, "add")}
-                  className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 px-6 flex items-center justify-center gap-2 transition-colors active:scale-95"
-                >
-                  <Plus className="h-6 w-6" />
-                  <span>Add</span>
-                </button>
-              </div>
-            </div>
-          );
-        })}
       </div>
 
-      {/* ── MODAL ──────────────────────────────────────────────────── */}
+      {/* Stock Update Modal */}
       {showModal && modalData && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-50">
-          <div className="bg-card rounded-2xl p-8 max-w-md w-full shadow-xl border-2 border-border">
-            <h2 className="text-2xl mb-2">
-              {modalData.action === "add"
-                ? "Add Stock"
-                : modalData.action === "remove"
-                ? "Remove Stock"
-                : modalData.action === "costPrice"
-                ? "Update Cost Price"
-                : modalData.action === "unitSize"
-                ? "Update Container Size"
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <h2 className="text-xl font-bold text-[#131b2e] mb-1">
+              {modalData.action === "add" ? "Add Stock"
+                : modalData.action === "remove" ? "Remove Stock"
+                : modalData.action === "costPrice" ? "Update Cost Price"
+                : modalData.action === "unitSize" ? "Update Container Size"
                 : "Update Selling Price"}
             </h2>
-            <p className="text-muted-foreground mb-6">{modalData.productName}</p>
-
-            <label htmlFor="amount-input" className="block mb-3 text-foreground">
-              {modalData.action === "pricePerLiter"
-                ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
-                : modalData.action === "costPrice"
-                ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
-                : modalData.action === "unitSize"
-                ? "Container size in litres (e.g. 5 for a 5L tin):"
+            <p className="text-[#434655] text-sm mb-6">{modalData.productName}</p>
+            <label htmlFor="amount-input" className="block mb-2 text-sm font-semibold text-[#131b2e]">
+              {modalData.action === "pricePerLiter" ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
+                : modalData.action === "costPrice" ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
+                : modalData.action === "unitSize" ? "Container size in litres:"
                 : `Enter amount (${modalData.unit.toLowerCase()}):`}
             </label>
             <input
@@ -532,24 +469,15 @@ export function Inventory() {
               inputMode="numeric"
               value={inputAmount}
               onChange={(e) => setInputAmount(e.target.value)}
-              className="w-full px-6 py-4 text-2xl rounded-xl border-2 border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary mb-6"
+              className="w-full px-5 py-4 text-2xl rounded-xl border-2 border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 mb-6"
               placeholder={modalData.action === "pricePerLiter" || modalData.action === "costPrice" ? "0.00" : "0"}
               autoFocus
             />
-
             <div className="flex gap-3">
-              <button
-                onClick={closeModal}
-                disabled={confirming}
-                className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 px-6 transition-colors active:scale-95 disabled:opacity-50"
-              >
+              <button onClick={closeModal} disabled={confirming} className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-4 font-semibold transition-colors active:scale-95 disabled:opacity-50">
                 Cancel
               </button>
-              <button
-                onClick={handleConfirm}
-                disabled={confirming}
-                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 px-6 transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center gap-2"
-              >
+              <button onClick={handleConfirm} disabled={confirming} className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-4 font-semibold transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center gap-2">
                 {confirming && (
                   <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -563,87 +491,55 @@ export function Inventory() {
         </div>
       )}
 
-      {/* ── PRICE UPDATE CONFIRMATION MODAL ──────────────────────── */}
+      {/* Price Update Confirmation Modal */}
       {showPriceModal && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-6 z-50 overflow-y-auto">
-          <div className="bg-card rounded-2xl w-full max-w-lg shadow-xl border-2 border-border my-6">
-            <div className="p-6 border-b border-border">
-              <h2 className="text-xl font-semibold text-foreground">Price Changes Detected</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Review the changes extracted from the image before applying
-              </p>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-6">
+            <div className="p-6 border-b border-[#c3c6d7]">
+              <h2 className="text-lg font-bold text-[#131b2e]">Price Changes Detected</h2>
+              <p className="text-sm text-[#434655] mt-1">Review before applying</p>
             </div>
-
             <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
               {priceChanges.map((change, idx) => {
                 if (change.isNew) {
                   return (
-                    <div
-                      key={`new-${idx}`}
-                      className="rounded-xl p-4 border-2 border-accent/50 bg-accent/10"
-                    >
+                    <div key={`new-${idx}`} className="rounded-xl p-4 border border-orange-200 bg-orange-50">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-medium text-foreground truncate">{change.extractedName}</p>
-                            <span className="text-xs bg-accent text-accent-foreground px-2 py-0.5 rounded-lg whitespace-nowrap">
-                              Not in inventory
-                            </span>
+                            <p className="font-semibold text-[#131b2e] truncate">{change.extractedName}</p>
+                            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-lg whitespace-nowrap">Not in inventory</span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Found in image — not matched to any product
-                          </p>
+                          <p className="text-xs text-[#434655] mt-0.5">Found in image — not matched</p>
                         </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-foreground font-semibold">₹{change.newPrice}</span>
-                        </div>
+                        <span className="text-[#131b2e] font-semibold shrink-0">₹{change.newPrice}</span>
                       </div>
                     </div>
                   );
                 }
-
                 const diff = change.newPrice - change.currentPrice;
-                const pct = change.currentPrice > 0
-                  ? ((diff / change.currentPrice) * 100).toFixed(1)
-                  : "—";
+                const pct = change.currentPrice > 0 ? ((diff / change.currentPrice) * 100).toFixed(1) : "—";
                 const unchanged = diff === 0;
                 return (
-                  <div
-                    key={change.productId}
-                    className={`rounded-xl p-4 border-2 ${
-                      unchanged
-                        ? "border-border bg-muted/30"
-                        : diff > 0
-                        ? "border-destructive/30 bg-destructive/5"
-                        : "border-primary/30 bg-primary/5"
-                    }`}
-                  >
+                  <div key={change.productId} className={`rounded-xl p-4 border ${unchanged ? "border-[#c3c6d7] bg-[#f2f3ff]" : diff > 0 ? "border-red-200 bg-red-50" : "border-blue-200 bg-blue-50"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-medium text-foreground truncate">{change.productName}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Found as: "{change.extractedName}"
-                        </p>
+                        <p className="font-semibold text-[#131b2e] truncate">{change.productName}</p>
+                        <p className="text-xs text-[#434655] mt-0.5">Found as: "{change.extractedName}"</p>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="flex items-center gap-2 justify-end">
-                          <span className="text-muted-foreground line-through text-sm">
-                            ₹{change.currentPrice}
-                          </span>
-                          <span className="text-foreground font-semibold">
-                            ₹{change.newPrice}
-                          </span>
+                          <span className="text-[#434655] line-through text-sm">₹{change.currentPrice}</span>
+                          <span className="text-[#131b2e] font-bold">₹{change.newPrice}</span>
                         </div>
                         {!unchanged && (
-                          <div className={`flex items-center gap-1 justify-end text-xs mt-1 ${diff > 0 ? "text-destructive" : "text-primary"}`}>
-                            {diff > 0
-                              ? <TrendingUp className="h-3 w-3" />
-                              : <TrendingDown className="h-3 w-3" />}
+                          <div className={`flex items-center gap-1 justify-end text-xs mt-1 ${diff > 0 ? "text-[#ba1a1a]" : "text-[#004ac6]"}`}>
+                            {diff > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                             <span>{diff > 0 ? "+" : ""}{diff.toFixed(2)} ({pct}%)</span>
                           </div>
                         )}
                         {unchanged && (
-                          <div className="flex items-center gap-1 justify-end text-xs mt-1 text-muted-foreground">
+                          <div className="flex items-center gap-1 justify-end text-xs mt-1 text-[#434655]">
                             <MinusIcon className="h-3 w-3" /> No change
                           </div>
                         )}
@@ -653,29 +549,17 @@ export function Inventory() {
                 );
               })}
             </div>
-
-            <div className="p-4 border-t border-border text-sm text-muted-foreground">
+            <div className="px-5 py-3 border-t border-[#c3c6d7] text-xs text-[#434655]">
               {priceChanges.filter((c) => !c.isNew && c.newPrice !== c.currentPrice).length} of {priceChanges.filter((c) => !c.isNew).length} inventory prices will change
               {priceChanges.filter((c) => c.isNew).length > 0 && (
-                <span className="ml-2 text-accent-foreground">
-                  · {priceChanges.filter((c) => c.isNew).length} not in inventory
-                </span>
+                <span className="ml-2 text-orange-700">· {priceChanges.filter((c) => c.isNew).length} not in inventory</span>
               )}
             </div>
-
             <div className="p-4 flex gap-3">
-              <button
-                onClick={() => { setShowPriceModal(false); setPriceChanges([]); }}
-                disabled={applyingPrices}
-                className="flex-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl py-4 transition-colors active:scale-95 disabled:opacity-50"
-              >
+              <button onClick={() => { setShowPriceModal(false); setPriceChanges([]); }} disabled={applyingPrices} className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-4 font-semibold transition-colors active:scale-95 disabled:opacity-50">
                 Cancel
               </button>
-              <button
-                onClick={handleApplyPrices}
-                disabled={applyingPrices || priceChanges.every((c) => c.isNew || c.newPrice === c.currentPrice)}
-                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl py-4 flex items-center justify-center gap-2 transition-colors active:scale-95 disabled:opacity-60"
-              >
+              <button onClick={handleApplyPrices} disabled={applyingPrices || priceChanges.every((c) => c.isNew || c.newPrice === c.currentPrice)} className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-4 font-semibold flex items-center justify-center gap-2 transition-colors active:scale-95 disabled:opacity-60">
                 {applyingPrices && (
                   <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
