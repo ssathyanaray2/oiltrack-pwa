@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown, Search, Trash2 } from "lucide-react";
+import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown, Search, Trash2, Send } from "lucide-react";
 import { Link } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
 import { toast } from "sonner";
@@ -31,6 +31,58 @@ export function Inventory() {
   const [alertExpanded, setAlertExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<FilterOption>("all");
+
+  // Restock sheet
+  interface RestockItem { tempId: string; name: string; quantity: number; unit: string; }
+  const [showRestockSheet, setShowRestockSheet] = useState(false);
+  const [restockItems, setRestockItems] = useState<RestockItem[]>([]);
+  const [restockMessage, setRestockMessage] = useState("");
+  const [messageManuallyEdited, setMessageManuallyEdited] = useState(false);
+  const [newItemProductId, setNewItemProductId] = useState("");
+
+  const buildMessage = (items: RestockItem[]) => {
+    if (!items.length) return "";
+    const lines = items.map((i) => `- ${i.name}: ${i.quantity} ${i.unit}`).join("\n");
+    return `Hi, please restock the following:\n${lines}\n\nThank you`;
+  };
+
+  const openRestockSheet = () => {
+    const items: RestockItem[] = products
+      .filter((p) => p.stock < p.lowStockThreshold)
+      .map((p) => ({
+        tempId: p.id,
+        name: p.name,
+        quantity: Math.max(1, p.lowStockThreshold - p.stock),
+        unit: p.unit,
+      }));
+    setRestockItems(items);
+    setRestockMessage(buildMessage(items));
+    setMessageManuallyEdited(false);
+    setNewItemProductId("");
+    setShowRestockSheet(true);
+  };
+
+  const updateRestockItems = (next: RestockItem[]) => {
+    setRestockItems(next);
+    if (!messageManuallyEdited) setRestockMessage(buildMessage(next));
+  };
+
+  const addRestockItem = () => {
+    const product = products.find((p) => p.id === newItemProductId);
+    if (!product) return;
+    if (restockItems.some((i) => i.tempId === product.id)) {
+      toast.error("Already in the list");
+      return;
+    }
+    const next = [...restockItems, { tempId: product.id, name: product.name, quantity: product.lowStockThreshold, unit: product.unit }];
+    updateRestockItems(next);
+    setNewItemProductId("");
+  };
+
+  const shareRestock = () => {
+    const text = encodeURIComponent(restockMessage);
+    window.open(`https://wa.me/?text=${text}`, "_blank");
+  };
 
   // Price-update-from-image state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -352,21 +404,42 @@ export function Inventory() {
         <h1 className="text-xl font-bold text-[#131b2e] tracking-tight">Inventory</h1>
         <div className="flex items-center gap-2">
           {ai_price_update && (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={analyzing}
-              className="flex items-center gap-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60"
-            >
-              {analyzing ? (
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                </svg>
-              ) : (
-                <ImageUp className="h-4 w-4" />
-              )}
-              {analyzing ? "Analysing…" : "Update Prices"}
-            </button>
+            <div className="relative group">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={analyzing}
+                className="flex items-center gap-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-xl px-4 py-2 text-sm font-semibold transition-colors active:scale-95 disabled:opacity-60"
+              >
+                {analyzing ? (
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                  </svg>
+                ) : (
+                  <ImageUp className="h-4 w-4" />
+                )}
+                {analyzing ? "Analysing…" : "Update Prices"}
+              </button>
+              <div className="absolute top-full mt-2 right-0 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 w-52 text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
+                <div className="absolute bottom-full right-4 border-4 border-transparent border-b-[#131b2e]" />
+                Upload a price list photo — AI will detect and update your product prices
+              </div>
+            </div>
+          )}
+          {lowStockProducts.length > 0 && (
+            <div className="relative group">
+              <button
+                onClick={openRestockSheet}
+                className="flex items-center gap-1.5 bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
+              >
+                <Send className="h-4 w-4" />
+                Restock
+              </button>
+              <div className="absolute top-full mt-2 right-0 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
+                <div className="absolute bottom-full right-4 border-4 border-transparent border-b-[#131b2e]" />
+                Send restock request to supplier
+              </div>
+            </div>
           )}
           <Link
             to="/inventory/new"
@@ -559,39 +632,43 @@ export function Inventory() {
 
       {/* Stock Update Modal */}
       {showModal && modalData && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-6 z-50">
-          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-xl font-bold text-[#131b2e] mb-1">
-              {modalData.action === "add" ? "Add Stock"
-                : modalData.action === "remove" ? "Remove Stock"
-                : modalData.action === "costPrice" ? "Update Cost Price"
-                : modalData.action === "unitSize" ? "Update Container Size"
-                : modalData.action === "reorderThreshold" ? "Update Reorder Threshold"
-                : "Update Selling Price"}
-            </h2>
-            <p className="text-[#434655] text-sm mb-6">{modalData.productName}</p>
-            <label htmlFor="amount-input" className="block mb-2 text-sm font-semibold text-[#131b2e]">
-              {modalData.action === "pricePerLiter" ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
-                : modalData.action === "costPrice" ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
-                : modalData.action === "unitSize" ? "Container size in litres:"
-                : modalData.action === "reorderThreshold" ? `Reorder when stock falls below (${modalData.unit.toLowerCase()}):`
-                : `Enter amount (${modalData.unit.toLowerCase()}):`}
-            </label>
-            <input
-              id="amount-input"
-              type="number"
-              inputMode="numeric"
-              value={inputAmount}
-              onChange={(e) => setInputAmount(e.target.value)}
-              className="w-full px-5 py-4 text-2xl rounded-xl border-2 border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 mb-6"
-              placeholder={modalData.action === "pricePerLiter" || modalData.action === "costPrice" ? "0.00" : "0"}
-              autoFocus
-            />
-            <div className="flex gap-3">
-              <button onClick={closeModal} disabled={confirming} className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-4 font-semibold transition-colors active:scale-95 disabled:opacity-50">
+        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-[60]">
+          <div className="bg-white rounded-t-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="p-5 border-b border-[#c3c6d7] shrink-0">
+              <h2 className="text-lg font-bold text-[#131b2e]">
+                {modalData.action === "add" ? "Add Stock"
+                  : modalData.action === "remove" ? "Remove Stock"
+                  : modalData.action === "costPrice" ? "Update Cost Price"
+                  : modalData.action === "unitSize" ? "Update Container Size"
+                  : modalData.action === "reorderThreshold" ? "Update Reorder Threshold"
+                  : "Update Selling Price"}
+              </h2>
+              <p className="text-[#434655] text-sm mt-0.5">{modalData.productName}</p>
+            </div>
+            <div className="p-5 overflow-y-auto flex-1">
+              <label htmlFor="amount-input" className="block mb-2 text-sm font-semibold text-[#131b2e]">
+                {modalData.action === "pricePerLiter" ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
+                  : modalData.action === "costPrice" ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
+                  : modalData.action === "unitSize" ? "Container size in litres:"
+                  : modalData.action === "reorderThreshold" ? `Reorder when stock falls below (${modalData.unit.toLowerCase()}):`
+                  : `Enter amount (${modalData.unit.toLowerCase()}):`}
+              </label>
+              <input
+                id="amount-input"
+                type="number"
+                inputMode="numeric"
+                value={inputAmount}
+                onChange={(e) => setInputAmount(e.target.value)}
+                className="w-full px-5 py-4 text-2xl rounded-xl border-2 border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                placeholder={modalData.action === "pricePerLiter" || modalData.action === "costPrice" ? "0.00" : "0"}
+                autoFocus
+              />
+            </div>
+            <div className="p-4 flex gap-3 border-t border-[#c3c6d7] shrink-0">
+              <button onClick={closeModal} disabled={confirming} className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 font-semibold transition-colors active:scale-95 disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={handleConfirm} disabled={confirming} className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-4 font-semibold transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center gap-2">
+              <button onClick={handleConfirm} disabled={confirming} className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-3 font-semibold transition-colors active:scale-95 disabled:opacity-70 flex items-center justify-center gap-2">
                 {confirming && (
                   <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -607,7 +684,7 @@ export function Inventory() {
 
       {/* Price Update Confirmation Modal */}
       {showPriceModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-6 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-6 z-[60] overflow-y-auto">
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-6">
             <div className="p-6 border-b border-[#c3c6d7]">
               <h2 className="text-lg font-bold text-[#131b2e]">Price Changes Detected</h2>
@@ -681,6 +758,114 @@ export function Inventory() {
                   </svg>
                 )}
                 {applyingPrices ? "Applying…" : "Apply Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restock Modal */}
+      {showRestockSheet && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-6 z-[60] overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-6">
+
+            {/* Header */}
+            <div className="p-6 border-b border-[#c3c6d7]">
+              <h2 className="text-lg font-bold text-[#131b2e]">Restock Request</h2>
+              <p className="text-sm text-[#434655] mt-1">Review quantities and share with your supplier</p>
+            </div>
+
+            {/* Items */}
+            <div className="p-4 space-y-3 max-h-[35vh] overflow-y-auto">
+              {restockItems.length === 0 && (
+                <p className="text-sm text-[#737686] text-center py-4">No items — add a product below</p>
+              )}
+              {restockItems.map((item) => (
+                <div key={item.tempId} className="rounded-xl p-4 border border-[#c3c6d7] bg-[#f2f3ff] flex items-center gap-3">
+                  <p className="font-semibold text-[#131b2e] flex-1 truncate">{item.name}</p>
+                  <input
+                    type="number"
+                    min={1}
+                    value={item.quantity}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (isNaN(val) || val < 1) return;
+                      updateRestockItems(restockItems.map((i) => i.tempId === item.tempId ? { ...i, quantity: val } : i));
+                    }}
+                    className="w-20 text-center px-2 py-1.5 rounded-lg border border-[#c3c6d7] bg-white text-[#131b2e] text-sm focus:outline-none focus:border-[#2563eb]"
+                  />
+                  <span className="text-xs text-[#737686] w-8 shrink-0">{item.unit}</span>
+                  <button
+                    onClick={() => updateRestockItems(restockItems.filter((i) => i.tempId !== item.tempId))}
+                    className="p-1.5 rounded-lg text-[#b0b3c6] hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+
+              {/* Add item row */}
+              <div className="flex items-center gap-2 pt-1">
+                <select
+                  value={newItemProductId}
+                  onChange={(e) => setNewItemProductId(e.target.value)}
+                  className="flex-1 px-3 py-2.5 rounded-xl border border-[#c3c6d7] bg-white text-sm text-[#131b2e] focus:outline-none focus:border-[#2563eb]"
+                >
+                  <option value="">Add a product…</option>
+                  {products
+                    .filter((p) => !restockItems.some((i) => i.tempId === p.id))
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                </select>
+                <button
+                  onClick={addRestockItem}
+                  disabled={!newItemProductId}
+                  className="flex items-center justify-center w-10 h-10 rounded-xl bg-[#004ac6] text-white disabled:opacity-40 active:scale-95 transition-all shrink-0"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Message preview */}
+            <div className="px-4 pb-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-[#131b2e]">Message preview</p>
+                {messageManuallyEdited && (
+                  <button
+                    onClick={() => { setRestockMessage(buildMessage(restockItems)); setMessageManuallyEdited(false); }}
+                    className="text-xs text-[#2563eb] hover:underline"
+                  >
+                    ↺ Reset
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={restockMessage}
+                onChange={(e) => { setRestockMessage(e.target.value); setMessageManuallyEdited(true); }}
+                rows={5}
+                className="w-full px-4 py-3 rounded-xl border border-[#c3c6d7] bg-[#f2f3ff] text-sm text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 resize-none"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="p-4 flex gap-3 border-t border-[#c3c6d7]">
+              <button
+                onClick={() => setShowRestockSheet(false)}
+                className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-4 font-semibold transition-colors active:scale-95"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={shareRestock}
+                disabled={!restockMessage.trim() || restockItems.length === 0}
+                className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] text-white rounded-xl py-4 font-semibold flex items-center justify-center gap-2 transition-colors active:scale-95 disabled:opacity-50"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+                Share on WhatsApp
               </button>
             </div>
           </div>

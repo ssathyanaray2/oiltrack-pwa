@@ -9,7 +9,7 @@ import { offlineOrdersDB, type OfflineOrder } from "../../lib/db";
 import { SYNC_COMPLETE_EVENT } from "../hooks/useOfflineSync";
 import type { Order, Product } from "../../lib/types";
 import { orders as mockOrders, products as mockProducts } from "../data/mockData";
-import { Plus, Calendar, User, Package as PackageIcon, LayoutGrid, List, ArrowUpDown, Search, IndianRupee, Clock } from "lucide-react";
+import { Plus, Calendar, User, Package as PackageIcon, LayoutGrid, List, ArrowUpDown, Search, IndianRupee, Clock, ChevronDown } from "lucide-react";
 
 type ViewMode = "card" | "list";
 type SortOrder = "recent" | "oldest";
@@ -29,6 +29,17 @@ export function Orders() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (orderId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setExpandedOrders((prev) => {
+      const next = new Set(prev);
+      next.has(orderId) ? next.delete(orderId) : next.add(orderId);
+      return next;
+    });
+  };
 
   const handleStatusChange = async (orderId: string, currentStatus: Order["status"], newStatus: Order["status"]) => {
     if (currentStatus === newStatus) return;
@@ -54,14 +65,30 @@ export function Orders() {
   const handlePaymentStatusChange = async (orderId: string, currentPayment: Order["paymentStatus"], newPayment: Order["paymentStatus"]) => {
     if (currentPayment === newPayment) return;
     setSavingOrderId(orderId);
-    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentStatus: newPayment } : o));
+    const clearedMethod = newPayment === "Unpaid" ? null : undefined;
+    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentStatus: newPayment, ...(newPayment === "Unpaid" ? { paymentMethod: undefined } : {}) } : o));
     try {
-      await updateOrder(orderId, { paymentStatus: newPayment });
+      await updateOrder(orderId, { paymentStatus: newPayment, ...(clearedMethod !== undefined ? { paymentMethod: clearedMethod } : {}) });
       setCachedOrders(orders.map((o) => o.id === orderId ? { ...o, paymentStatus: newPayment } : o));
     } catch (err) {
       console.error(err);
       toast.error("Failed to update payment status");
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentStatus: currentPayment } : o));
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const handlePaymentMethodChange = async (orderId: string, newMethod: Order["paymentMethod"]) => {
+    setSavingOrderId(orderId);
+    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentMethod: newMethod } : o));
+    try {
+      await updateOrder(orderId, { paymentMethod: newMethod });
+      setCachedOrders(orders.map((o) => o.id === orderId ? { ...o, paymentMethod: newMethod } : o));
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update payment method");
+      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentMethod: undefined } : o));
     } finally {
       setSavingOrderId(null);
     }
@@ -160,6 +187,17 @@ export function Orders() {
     }
   };
 
+  const getPaymentMethodColor = (method: string | undefined) => {
+    switch (method) {
+      case "Cash":
+        return "bg-purple-100 text-purple-700";
+      case "UPI":
+        return "bg-teal-100 text-teal-700";
+      default:
+        return "bg-gray-100 text-gray-500";
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -174,7 +212,10 @@ export function Orders() {
     .sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
-      return sortOrder === "recent" ? dateB - dateA : dateA - dateB;
+      if (dateA !== dateB) return sortOrder === "recent" ? dateB - dateA : dateA - dateB;
+      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return sortOrder === "recent" ? createdB - createdA : createdA - createdB;
     });
 
   if (loading) {
@@ -368,11 +409,35 @@ export function Orders() {
                     </div>
 
                     {/* Product + quantity */}
-                    <div className="flex items-center gap-2 mb-3">
-                      <PackageIcon className="h-4 w-4 text-[#737686] flex-shrink-0" />
-                      <span className="text-sm text-[#434655]">
-                        {getProductName(order.productId)} · {order.quantity} L
-                      </span>
+                    <div className="mb-3">
+                      {order.items && order.items.length > 1 ? (
+                        <>
+                          <button
+                            onClick={(e) => toggleExpand(order.id, e)}
+                            className="flex items-center gap-2 text-sm text-[#434655] w-full text-left"
+                          >
+                            <PackageIcon className="h-4 w-4 text-[#737686] flex-shrink-0" />
+                            <span>{order.items.length} items</span>
+                            <ChevronDown className={`h-3.5 w-3.5 text-[#737686] transition-transform ${expandedOrders.has(order.id) ? "rotate-180" : ""}`} />
+                          </button>
+                          {expandedOrders.has(order.id) && (
+                            <div className="mt-2 ml-6 space-y-1">
+                              {order.items.map((item, i) => (
+                                <div key={i} className="text-xs text-[#434655]">
+                                  {getProductName(item.productId)} · {item.quantity} L
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <PackageIcon className="h-4 w-4 text-[#737686] flex-shrink-0" />
+                          <span className="text-sm text-[#434655]">
+                            {getProductName(order.productId)} · {order.quantity} L
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Inline status selects + date */}
@@ -400,6 +465,19 @@ export function Orders() {
                           <option value="Unpaid">Unpaid</option>
                           <option value="Paid">Paid</option>
                         </select>
+                        {order.paymentStatus === "Paid" && (
+                          <select
+                            value={order.paymentMethod ?? ""}
+                            disabled={isSaving}
+                            onChange={(e) => handlePaymentMethodChange(order.id, e.target.value as Order["paymentMethod"])}
+                            onClick={(e) => e.preventDefault()}
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full border-0 outline-none cursor-pointer ${getPaymentMethodColor(order.paymentMethod)}`}
+                          >
+                            <option value="">Method?</option>
+                            <option value="Cash">Cash</option>
+                            <option value="UPI">UPI</option>
+                          </select>
+                        )}
                       </div>
                       <div className="flex items-center gap-1 text-[#737686]">
                         <Calendar className="h-3.5 w-3.5" />
@@ -456,17 +534,49 @@ export function Orders() {
                           <option value="Unpaid">Unpaid</option>
                           <option value="Paid">Paid</option>
                         </select>
+                        {order.paymentStatus === "Paid" && (
+                          <select
+                            value={order.paymentMethod ?? ""}
+                            disabled={isSaving}
+                            onChange={(e) => handlePaymentMethodChange(order.id, e.target.value as Order["paymentMethod"])}
+                            onClick={(e) => e.preventDefault()}
+                            className={`text-xs font-semibold px-1.5 py-0.5 rounded-full border-0 outline-none cursor-pointer ${getPaymentMethodColor(order.paymentMethod)}`}
+                          >
+                            <option value="">Method?</option>
+                            <option value="Cash">Cash</option>
+                            <option value="UPI">UPI</option>
+                          </select>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-1">
-                      <span className="text-xs text-[#434655] truncate flex-1 min-w-0">
-                        {getProductName(order.productId)} ({order.quantity}L)
-                      </span>
+                      {order.items && order.items.length > 1 ? (
+                        <button
+                          onClick={(e) => toggleExpand(order.id, e)}
+                          className="flex items-center gap-1 text-xs text-[#434655] flex-1 min-w-0 text-left"
+                        >
+                          <span>{order.items.length} items</span>
+                          <ChevronDown className={`h-3 w-3 text-[#737686] transition-transform flex-shrink-0 ${expandedOrders.has(order.id) ? "rotate-180" : ""}`} />
+                        </button>
+                      ) : (
+                        <span className="text-xs text-[#434655] truncate flex-1 min-w-0">
+                          {getProductName(order.productId)} ({order.quantity}L)
+                        </span>
+                      )}
                       <div className="flex flex-col items-end flex-shrink-0 ml-2">
                         <span className="text-xs font-semibold text-[#004ac6]">₹{formattedTotalList}</span>
                         <span className="text-[10px] text-[#737686]">{formatDate(order.date)}</span>
                       </div>
                     </div>
+                    {order.items && order.items.length > 1 && expandedOrders.has(order.id) && (
+                      <div className="mt-1.5 ml-1 space-y-0.5">
+                        {order.items.map((item, i) => (
+                          <div key={i} className="text-xs text-[#434655]">
+                            {getProductName(item.productId)} · {item.quantity} L
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </Link>
               );

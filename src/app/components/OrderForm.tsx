@@ -44,6 +44,7 @@ export function OrderForm() {
     date: new Date().toISOString().split("T")[0],
     status: "Pending" as Order["status"],
     paymentStatus: "Unpaid" as Order["paymentStatus"],
+    paymentMethod: undefined as Order["paymentMethod"],
     notes: "",
   });
 
@@ -77,6 +78,7 @@ export function OrderForm() {
                 date: order.date,
                 status: order.status,
                 paymentStatus: order.paymentStatus,
+                paymentMethod: order.paymentMethod,
                 notes: order.notes ?? "",
               });
               const items = order.items && order.items.length > 0
@@ -102,6 +104,7 @@ export function OrderForm() {
                 date: order.date,
                 status: order.status,
                 paymentStatus: order.paymentStatus,
+                paymentMethod: order.paymentMethod,
                 notes: order.notes ?? "",
               });
               const items = order.items && order.items.length > 0
@@ -183,7 +186,14 @@ export function OrderForm() {
     const cached = getCachedOrders() as Order[] | null;
     return (cached ?? [])
       .filter((o) => o.customerId === formData.customerId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] ?? null;
+      .sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateB - dateA;
+        const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return createdB - createdA;
+      })[0] ?? null;
   };
 
   const handleRepeatLastOrder = () => {
@@ -236,7 +246,7 @@ export function OrderForm() {
     setAIParsed([]);
   };
 
-  const handleShare = async () => {
+  const handleShare = () => {
     if (orderItems.some((i) => !i.productId || !i.quantity)) {
       toast.error("Please fill in all order items before sharing");
       return;
@@ -251,29 +261,26 @@ export function OrderForm() {
       return `• ${product?.name ?? "Unknown"} — ${qty} L @ ₹${product?.pricePerLiter}/L = ₹${subtotal.toLocaleString("en-IN")}`;
     }).join("\n");
     const total = getOrderTotal().toLocaleString("en-IN", { maximumFractionDigits: 0 });
+
     const message = [
-      `🛢️ *Order Receipt*`,
-      `Customer: ${formData.customerName}`,
-      `Date: ${date}`,
+      `*Order Summary*`,
+      `Here are your order details.`,
       ``,
       `*Items:*`,
       itemLines,
       ``,
       `*Total: ₹${total}*`,
+      `Date: ${date}`,
+      ``,
+      `Thank you for your business! 🙏`,
     ].join("\n").trim();
 
-    if (navigator.share) {
-      try {
-        await navigator.share({ text: message });
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name !== "AbortError") {
-          toast.error("Could not open share sheet");
-        }
-      }
-    } else {
-      await navigator.clipboard.writeText(message);
-      toast.success("Order details copied to clipboard");
-    }
+    const customer = customers.find((c) => c.id === formData.customerId);
+    const rawPhone = customer?.phone?.replace(/\D/g, "") ?? "";
+    const phone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -347,6 +354,7 @@ export function OrderForm() {
           date: formData.date,
           status: formData.status,
           paymentStatus: formData.paymentStatus,
+          paymentMethod: formData.paymentStatus === "Paid" ? formData.paymentMethod : null,
           notes: formData.notes || undefined,
           items: parsedItems,
         });
@@ -360,6 +368,7 @@ export function OrderForm() {
           date: formData.date,
           status: formData.status,
           paymentStatus: formData.paymentStatus,
+          paymentMethod: formData.paymentStatus === "Paid" ? formData.paymentMethod : undefined,
           notes: formData.notes || undefined,
           items: parsedItems,
         });
@@ -594,15 +603,21 @@ export function OrderForm() {
             </div>
             <div className="flex items-center gap-2">
               {isSupabaseConfigured() && ai_order_fill && (
-                <button
-                  type="button"
-                  onClick={() => setShowAIModal(true)}
-                  disabled={isLocked}
-                  className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  AI Fill
-                </button>
+                <div className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => setShowAIModal(true)}
+                    disabled={isLocked}
+                    className="flex items-center gap-1.5 bg-[#eaedff] hover:bg-[#dae2fd] text-[#004ac6] rounded-xl px-3 py-2 text-xs font-semibold transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    AI Fill
+                  </button>
+                  <div className="absolute bottom-full mb-2 right-0 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 w-52 text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
+                    Paste a WhatsApp message or describe the order — AI will fill the items automatically
+                    <div className="absolute top-full right-3 border-4 border-transparent border-t-[#131b2e]" />
+                  </div>
+                </div>
               )}
               <button
                 type="button"
@@ -657,23 +672,21 @@ export function OrderForm() {
                       ))}
                     </select>
 
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(index, "quantity", e.target.value)}
-                        placeholder="Quantity (L)"
-                        className="flex-1 px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm placeholder:text-[#737686]"
-                        required
-                      />
-                      {item.productId && item.quantity && (
-                        <div className="text-right min-w-[90px]">
-                          <p className="text-xs text-[#737686]">Subtotal</p>
-                          <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
-                        </div>
-                      )}
-                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(index, "quantity", e.target.value)}
+                      placeholder="Quantity (L)"
+                      className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm placeholder:text-[#737686]"
+                      required
+                    />
+                    {item.productId && item.quantity && (
+                      <div className="flex items-center justify-between px-1">
+                        <p className="text-xs text-[#737686]">Subtotal</p>
+                        <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
+                      </div>
+                    )}
 
                     {selectedProduct && (
                       <p className="text-xs text-[#737686]">
@@ -743,19 +756,38 @@ export function OrderForm() {
 
         {/* Payment Status (edit only) */}
         {isEditing && (
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
-            <label htmlFor="paymentStatus" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
-              Payment Status
-            </label>
-            <select
-              id="paymentStatus"
-              value={formData.paymentStatus}
-              onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value as Order["paymentStatus"] })}
-              className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-            >
-              <option value="Unpaid">Unpaid</option>
-              <option value="Paid">Paid</option>
-            </select>
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 space-y-4">
+            <div>
+              <label htmlFor="paymentStatus" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+                Payment Status
+              </label>
+              <select
+                id="paymentStatus"
+                value={formData.paymentStatus}
+                onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value as Order["paymentStatus"], paymentMethod: e.target.value === "Unpaid" ? undefined : formData.paymentMethod })}
+                className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+              >
+                <option value="Unpaid">Unpaid</option>
+                <option value="Paid">Paid</option>
+              </select>
+            </div>
+            {formData.paymentStatus === "Paid" && (
+              <div>
+                <label htmlFor="paymentMethod" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+                  Payment Method
+                </label>
+                <select
+                  id="paymentMethod"
+                  value={formData.paymentMethod ?? ""}
+                  onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as Order["paymentMethod"] })}
+                  className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                >
+                  <option value="">Select method</option>
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI</option>
+                </select>
+              </div>
+            )}
           </div>
         )}
 
@@ -812,11 +844,11 @@ export function OrderForm() {
 
       {/* ── AI ORDER PARSER MODAL ─────────────────────────────────── */}
       {showAIModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50 p-4 pb-8">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-[0_4px_16px_rgba(0,74,198,0.12)]">
+        <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-[60]">
+          <div className="bg-white rounded-t-2xl w-full max-w-lg shadow-[0_4px_16px_rgba(0,74,198,0.12)] flex flex-col max-h-[85vh]">
 
             {/* Header */}
-            <div className="p-5 border-b border-[#c3c6d7] flex items-center justify-between">
+            <div className="p-5 border-b border-[#c3c6d7] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-[#004ac6]" />
                 <h2 className="text-base font-bold text-[#131b2e]">
@@ -833,7 +865,7 @@ export function OrderForm() {
 
             {aiStep === "input" ? (
               <>
-                <div className="p-5 space-y-3">
+                <div className="p-5 space-y-3 overflow-y-auto flex-1">
                   <p className="text-sm text-[#737686]">
                     Type or paste the order in plain text — e.g. a WhatsApp message or a spoken description.
                   </p>
@@ -842,11 +874,11 @@ export function OrderForm() {
                     value={aiText}
                     onChange={(e) => setAIText(e.target.value)}
                     placeholder={"e.g. \"10L groundnut, 5 sunflower oil, coconut 3 litres, 20L palm\""}
-                    rows={5}
+                    rows={3}
                     className="w-full rounded-xl border border-[#c3c6d7] bg-[#f2f3ff] px-4 py-3 text-sm text-[#131b2e] placeholder:text-[#737686] outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 transition-colors resize-none"
                   />
                 </div>
-                <div className="p-4 flex gap-3 border-t border-[#c3c6d7]">
+                <div className="p-4 flex gap-3 border-t border-[#c3c6d7] shrink-0">
                   <button
                     type="button"
                     onClick={closeAIModal}
@@ -879,7 +911,7 @@ export function OrderForm() {
               </>
             ) : (
               <>
-                <div className="p-5 space-y-3 max-h-[50vh] overflow-y-auto">
+                <div className="p-5 space-y-3 overflow-y-auto flex-1">
                   <p className="text-sm text-[#737686]">
                     AI matched {aiParsed.length} item{aiParsed.length !== 1 ? "s" : ""}. Review before applying.
                   </p>
@@ -918,7 +950,7 @@ export function OrderForm() {
                     </span>
                   </div>
                 </div>
-                <div className="p-4 flex gap-3 border-t border-[#c3c6d7]">
+                <div className="p-4 flex gap-3 border-t border-[#c3c6d7] shrink-0">
                   <button
                     type="button"
                     onClick={() => setAIStep("input")}

@@ -43,8 +43,10 @@ function mapOrder(
     productId: firstItem?.product_id != null ? String(firstItem.product_id) : "",
     quantity: firstItem ? Number(firstItem.quantity) : 0,
     date: String(orderRow.order_date ?? orderRow.date ?? new Date().toISOString().slice(0, 10)),
+    createdAt: orderRow.created_at != null ? String(orderRow.created_at) : undefined,
     status: (orderRow.status as Order["status"]) ?? "Pending",
     paymentStatus: (orderRow.payment_status as Order["paymentStatus"]) ?? "Unpaid",
+    paymentMethod: (orderRow.payment_method as Order["paymentMethod"]) ?? undefined,
     notes: orderRow.notes != null ? String(orderRow.notes) : undefined,
     items: itemRows.map((item) => ({
       productId: String(item.product_id),
@@ -205,7 +207,8 @@ export async function getOrders(): Promise<Order[]> {
   const { data: ordersData, error: ordersError } = await supabase
     .from("orders")
     .select("*")
-    .order("order_date", { ascending: false });
+    .order("order_date", { ascending: false })
+    .order("created_at", { ascending: false });
   if (ordersError) throw ordersError;
   if (!ordersData?.length) return [];
 
@@ -266,6 +269,7 @@ export async function createOrder(order: {
   date: string;
   status: Order["status"];
   paymentStatus: Order["paymentStatus"];
+  paymentMethod?: Order["paymentMethod"];
   notes?: string;
   items?: Array<{ productId: string; quantity: number }>;
 }): Promise<Order> {
@@ -299,6 +303,7 @@ export async function createOrder(order: {
     user_id: user?.id ?? null,
   };
   if (order.paymentStatus != null) orderPayload.payment_status = order.paymentStatus;
+  orderPayload.payment_method = order.paymentMethod ?? null;
 
   const { data: orderRow, error: orderError } = await supabase
     .from("orders")
@@ -339,6 +344,7 @@ export async function updateOrder(
     date?: string;
     status?: Order["status"];
     paymentStatus?: Order["paymentStatus"];
+    paymentMethod?: Order["paymentMethod"] | null;
     notes?: string;
     items?: Array<{ productId: string; quantity: number }>;
   }
@@ -352,6 +358,7 @@ export async function updateOrder(
   if (input.date !== undefined) orderPayload.order_date = input.date;
   if (input.status !== undefined) orderPayload.status = input.status;
   if (input.paymentStatus !== undefined) orderPayload.payment_status = input.paymentStatus;
+  if (input.paymentMethod !== undefined) orderPayload.payment_method = input.paymentMethod ?? null;
   if (input.notes !== undefined) orderPayload.notes = input.notes;
   if (input.customerId !== undefined) orderPayload.customer_id = input.customerId;
   if (input.customerName !== undefined) orderPayload.customer_name = input.customerName;

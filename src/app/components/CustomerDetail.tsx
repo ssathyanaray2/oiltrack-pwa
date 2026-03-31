@@ -6,7 +6,7 @@ import { getCachedCustomers, getCachedOrders, getCachedProducts } from "../../li
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Customer, Order, Product } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders, products as mockProducts } from "../data/mockData";
-import { ArrowLeft, User, Phone, MapPin, Mail, Calendar, Package as PackageIcon, Pencil } from "lucide-react";
+import { ArrowLeft, User, Phone, MapPin, Mail, Calendar, Package as PackageIcon, Pencil, ContactRound, IndianRupee } from "lucide-react";
 import React from "react";
 import { formatPhoneLink, formatMapsLink } from "../../lib/utils";
 
@@ -105,6 +105,36 @@ export function CustomerDetail() {
       .join("")
       .toUpperCase();
 
+  const sharePrices = () => {
+    if (!products.length) return;
+    const lines = products.map((p) => `• ${p.name}: ₹${p.pricePerLiter}/${p.unit}`).join("\n");
+    const message = `*Current Prices*\n\n${lines}`;
+    const rawPhone = customer?.phone?.replace(/\D/g, "") ?? "";
+    const phone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank");
+  };
+
+  const saveToContacts = () => {
+    if (!customer) return;
+    const lines = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `FN:${customer.name}`,
+      customer.phone ? `TEL:${customer.phone}` : null,
+      customer.email ? `EMAIL:${customer.email}` : null,
+      customer.address ? `ADR:;;${customer.address};;;;` : null,
+      "END:VCARD",
+    ].filter(Boolean).join("\n");
+
+    const blob = new Blob([lines], { type: "text/vcard" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${customer.name}.vcf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#faf8ff]">
@@ -163,6 +193,30 @@ export function CustomerDetail() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <span className="text-base font-bold text-[#131b2e] flex-1 truncate">{customer.name}</span>
+        <div className="relative group flex-shrink-0">
+          <button
+            onClick={sharePrices}
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] transition-colors active:scale-95"
+          >
+            <IndianRupee className="h-4 w-4" />
+          </button>
+          <div className="absolute top-full mt-2 right-0 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
+            <div className="absolute bottom-full right-3 border-4 border-transparent border-b-[#131b2e]" />
+            Share current prices
+          </div>
+        </div>
+        <div className="relative group flex-shrink-0">
+          <button
+            onClick={saveToContacts}
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] transition-colors active:scale-95"
+          >
+            <ContactRound className="h-4.5 w-4.5" />
+          </button>
+          <div className="absolute top-full mt-2 right-0 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
+            <div className="absolute bottom-full right-3 border-4 border-transparent border-b-[#131b2e]" />
+            Save to contacts
+          </div>
+        </div>
         <Link
           to={`/customers/edit/${customer.id}`}
           className="flex items-center gap-1.5 bg-[#2563eb] hover:bg-[#004ac6] text-white text-sm font-semibold px-3 py-2 rounded-xl transition-colors active:scale-[0.97] flex-shrink-0"

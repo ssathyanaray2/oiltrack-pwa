@@ -8,7 +8,9 @@ import { offlineCustomersDB, type OfflineCustomer } from "../../lib/db";
 import { SYNC_COMPLETE_EVENT } from "../hooks/useOfflineSync";
 import type { Customer, Order } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders } from "../data/mockData";
-import { User, Phone, MapPin, Mail, Plus, ShoppingBag, Clock } from "lucide-react";
+import { deleteCustomer } from "../../lib/api";
+import { toast } from "sonner";
+import { User, Phone, MapPin, Mail, Plus, ShoppingBag, Clock, Trash2 } from "lucide-react";
 import React from "react";
 import { formatMapsLink } from "../../lib/utils";
 
@@ -67,6 +69,19 @@ export function Customers() {
     if (customer.maps_link?.trim()) return customer.maps_link.trim();
     if (customer.address?.trim()) return formatMapsLink(customer.address);
     return null;
+  };
+
+  const handleDelete = async (e: React.MouseEvent, customerId: string, customerName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Delete ${customerName}? This cannot be undone.`)) return;
+    try {
+      await deleteCustomer(customerId);
+      setCustomers((prev) => prev.filter((c) => c.id !== customerId));
+      toast.success(`${customerName} deleted`);
+    } catch {
+      toast.error("Failed to delete customer");
+    }
   };
 
   if (loading) {
@@ -195,6 +210,13 @@ export function Customers() {
                       )}
                     </div>
                   </div>
+                  <button
+                    onClick={(e) => handleDelete(e, customer.id, customer.name)}
+                    className="p-2 rounded-xl text-[#b0b3c6] hover:text-red-500 hover:bg-red-50 transition-colors active:scale-95 flex-shrink-0"
+                    aria-label="Delete customer"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
 
                 {/* Contact details */}

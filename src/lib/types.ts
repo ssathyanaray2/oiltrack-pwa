@@ -14,7 +14,7 @@ export interface Customer {
   id: string;
   name: string;
   phone: string;
-  address: string;
+  address?: string;
   maps_link?: string;
   email?: string;
 }
@@ -26,8 +26,10 @@ export interface Order {
   productId: string;
   quantity: number;
   date: string;
+  createdAt?: string;
   status: "Pending" | "Packed" | "Delivered" | "Cancelled";
   paymentStatus: "Paid" | "Unpaid";
+  paymentMethod?: "Cash" | "UPI";
   notes?: string;
   items?: Array<{ productId: string; quantity: number }>;
 }

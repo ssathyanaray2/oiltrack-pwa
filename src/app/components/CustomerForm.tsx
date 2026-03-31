@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, WifiOff } from "lucide-react";
+import { ArrowLeft, WifiOff, BookUser } from "lucide-react";
 import { toast } from "sonner";
 import { getCustomer, createCustomer, updateCustomer } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
@@ -10,6 +10,18 @@ import { offlineCustomersDB } from "../../lib/db";
 import type { Customer } from "../../lib/types";
 import { customers as mockCustomers } from "../data/mockData";
 
+interface ContactsManager {
+  select(properties: string[], options?: { multiple?: boolean }): Promise<Array<{
+    name?: string[];
+    tel?: string[];
+    email?: string[];
+    address?: Array<{ addressLine?: string[]; city?: string; region?: string }>;
+  }>>;
+}
+declare global {
+  interface Navigator { contacts?: ContactsManager; }
+}
+
 export function CustomerForm() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -18,6 +30,32 @@ export function CustomerForm() {
 
   const [loading, setLoading] = useState(!!id);
   const [saving, setSaving] = useState(false);
+  const contactsSupported = typeof navigator !== "undefined" && !!navigator.contacts;
+
+  const handleImportContact = async () => {
+    try {
+      const contacts = await navigator.contacts!.select(["name", "tel", "email", "address"], { multiple: false });
+      if (!contacts.length) return;
+      const contact = contacts[0];
+      const name = contact.name?.[0] ?? "";
+      const phone = contact.tel?.[0] ?? "";
+      const email = contact.email?.[0] ?? "";
+      const addr = contact.address?.[0];
+      const address = addr
+        ? [addr.addressLine?.join(", "), addr.city, addr.region].filter(Boolean).join(", ")
+        : "";
+      setFormData((prev) => ({
+        ...prev,
+        name: name || prev.name,
+        phone: phone || prev.phone,
+        email: email || prev.email,
+        address: address || prev.address,
+      }));
+      toast.success("Contact imported — fill in any missing details");
+    } catch {
+      toast.error("Could not import contact");
+    }
+  };
 
   const [formData, setFormData] = useState({
     name: "",
@@ -83,8 +121,8 @@ export function CustomerForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.name.trim() || !formData.phone.trim() || !formData.address.trim()) {
-      toast.error("Please fill in all required fields");
+    if (!formData.name.trim() || !formData.phone.trim()) {
+      toast.error("Name and phone number are required");
       return;
     }
 
@@ -209,7 +247,18 @@ export function CustomerForm() {
         <h1 className="text-lg font-bold text-[#131b2e]">
           {isEditing ? "Edit Customer" : "Add Customer"}
         </h1>
-        <div className="w-9" />
+        {contactsSupported && !isEditing ? (
+          <button
+            type="button"
+            onClick={handleImportContact}
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
+            title="Import from contacts"
+          >
+            <BookUser className="h-5 w-5" />
+          </button>
+        ) : (
+          <div className="w-9" />
+        )}
       </div>
 
       {/* Offline banner */}
@@ -265,7 +314,7 @@ export function CustomerForm() {
           {/* Address */}
           <div>
             <label htmlFor="address" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
-              Delivery Address <span className="text-red-500">*</span>
+              Delivery Address <span className="text-[#737686] font-normal">(Optional)</span>
             </label>
             <textarea
               id="address"
@@ -275,7 +324,6 @@ export function CustomerForm() {
               className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686] resize-none"
               placeholder="Enter delivery address"
               rows={3}
-              required
             />
           </div>
 
