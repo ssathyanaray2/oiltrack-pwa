@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import Fuse from "fuse.js";
+import { ConfirmModal } from "./ConfirmModal";
 import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown, Search, Trash2, Send } from "lucide-react";
 import { Link } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
@@ -48,7 +50,7 @@ export function Inventory() {
 
   const openRestockSheet = () => {
     const items: RestockItem[] = products
-      .filter((p) => p.stock < p.lowStockThreshold)
+      .filter((p) => p.stock === 0 || p.stock < p.lowStockThreshold)
       .map((p) => ({
         tempId: p.id,
         name: p.name,
@@ -134,16 +136,24 @@ export function Inventory() {
     setConfirming(false);
   };
 
-  const handleDelete = async (productId: string, productName: string) => {
-    if (!confirm(`Delete "${productName}"? This cannot be undone.`)) return;
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+
+  const handleDelete = (productId: string, productName: string) => {
+    setDeleteConfirm({ id: productId, name: productName });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    const { id, name } = deleteConfirm;
+    setDeleteConfirm(null);
     try {
       if (isSupabaseConfigured() && isOnline) {
-        await deleteProduct(productId);
+        await deleteProduct(id);
       }
-      const next = products.filter((p) => p.id !== productId);
+      const next = products.filter((p) => p.id !== id);
       setProducts(next);
       setCachedProducts(next);
-      toast.success(`"${productName}" deleted`);
+      toast.success(`"${name}" deleted`);
     } catch (e) {
       console.error(e);
       toast.error("Failed to delete product");
@@ -306,17 +316,15 @@ export function Inventory() {
 
   const getStockStatus = (stock: number, threshold: number) => {
     if (stock === 0) return { level: "critical" as const };
-    if (stock <= threshold) return { level: "low" as const };
+    if (stock < threshold) return { level: "low" as const };
     return { level: "normal" as const };
   };
 
-  const lowStockProducts = products.filter((p) => p.stock <= p.lowStockThreshold);
-  const maxStock = Math.max(...products.map((p) => p.stock), 1);
+  const lowStockProducts = products.filter((p) => p.stock === 0 || p.stock < p.lowStockThreshold);
+  const productFuse = useMemo(() => new Fuse(products, { keys: ["name"], threshold: 0.3 }), [products]);
+  const searchedProducts = searchQuery ? productFuse.search(searchQuery).map((r) => r.item) : products;
 
-  const filteredProducts = products.filter((p) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = p.name.toLowerCase().includes(q);
-    if (!matchesSearch) return false;
+  const filteredProducts = searchedProducts.filter((p) => {
     const status = getStockStatus(p.stock, p.lowStockThreshold);
     if (filter === "low") return status.level === "low" || status.level === "critical";
     if (filter === "in") return status.level === "normal";
@@ -398,6 +406,7 @@ export function Inventory() {
   }
 
   return (
+    <>
     <div className="min-h-screen bg-[#faf8ff] pb-32">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
@@ -518,7 +527,6 @@ export function Inventory() {
           ) : (
             filteredProducts.map((product) => {
               const status = getStockStatus(product.stock, product.lowStockThreshold);
-              const barPercent = Math.min(100, Math.round((product.stock / maxStock) * 100));
               const borderColor = status.level === "critical" ? "#ba1a1a" : status.level === "low" ? "#943700" : "#004ac6";
               const iconBg = status.level === "critical" ? "bg-[#ffdad6]" : status.level === "low" ? "bg-[#ffdbcd]" : "bg-[#eaedff]";
               const iconColor = status.level === "critical" ? "text-[#ba1a1a]" : status.level === "low" ? "text-[#943700]" : "text-[#004ac6]";
@@ -540,7 +548,7 @@ export function Inventory() {
                       </div>
                       <div>
                         <h3 className="font-bold text-[#131b2e] text-base leading-tight">{product.name}</h3>
-                        <p className="text-xs text-[#737686] mt-0.5">{product.unit} · {product.unitSize}L/unit</p>
+                        <p className="text-xs text-[#737686] mt-0.5">{product.unit} · {product.unitSize} lt/unit</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -872,5 +880,16 @@ export function Inventory() {
         </div>
       )}
     </div>
+
+    <ConfirmModal
+      isOpen={!!deleteConfirm}
+      title="Delete Product"
+      message={`Delete "${deleteConfirm?.name}"? This cannot be undone.`}
+      confirmLabel="Delete"
+      variant="danger"
+      onConfirm={confirmDelete}
+      onCancel={() => setDeleteConfirm(null)}
+    />
+    </>
   );
 }

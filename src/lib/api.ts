@@ -3,6 +3,13 @@ import type { Product, Customer, Order, OrderItem } from "./types";
 import type { FeatureFlags } from "./featureFlags";
 import { defaultFlags } from "./featureFlags";
 
+async function getCurrentUserId(): Promise<string> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  return user.id;
+}
+
 /** Map DB row to Product (schema: quantity, unit_price, reorder_threshold) */
 function mapProduct(row: Record<string, unknown>): Product {
   return {
@@ -42,7 +49,7 @@ function mapOrder(
     customerName: (orderRow.customer_name != null ? String(orderRow.customer_name) : "") || customerName,
     productId: firstItem?.product_id != null ? String(firstItem.product_id) : "",
     quantity: firstItem ? Number(firstItem.quantity) : 0,
-    date: String(orderRow.order_date ?? orderRow.date ?? new Date().toISOString().slice(0, 10)),
+    date: String(orderRow.order_date ?? orderRow.date ?? new Date().toLocaleDateString("en-CA")),
     createdAt: orderRow.created_at != null ? String(orderRow.created_at) : undefined,
     status: (orderRow.status as Order["status"]) ?? "Pending",
     paymentStatus: (orderRow.payment_status as Order["paymentStatus"]) ?? "Unpaid",
@@ -51,6 +58,8 @@ function mapOrder(
     items: itemRows.map((item) => ({
       productId: String(item.product_id),
       quantity: Number(item.quantity),
+      unitPrice: Number(item.unit_price ?? 0),
+      costPrice: Number(item.cost_price ?? 0),
     })),
   };
 }
@@ -108,7 +117,7 @@ export async function updateProduct(
   id: string,
   input: Partial<Omit<Product, "id">>
 ): Promise<Product> {
-  if (!supabase) throw new Error("Supabase not configured");
+  const userId = await getCurrentUserId();
   const payload: Record<string, unknown> = {};
   if (input.name !== undefined) payload.name = input.name;
   if (input.stock !== undefined) payload.quantity = input.stock;
@@ -117,14 +126,14 @@ export async function updateProduct(
   if (input.pricePerLiter !== undefined) payload.unit_price = input.pricePerLiter;
   if (input.costPrice !== undefined) payload.cost_price = input.costPrice;
   if (input.unitSize !== undefined) payload.unit_size = input.unitSize;
-  const { data, error } = await supabase.from("products").update(payload).eq("id", id).select().single();
+  const { data, error } = await supabase!.from("products").update(payload).eq("id", id).eq("user_id", userId).select().single();
   if (error) throw error;
   return mapProduct(data);
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { error } = await supabase.from("products").delete().eq("id", id);
+  const userId = await getCurrentUserId();
+  const { error } = await supabase!.from("products").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
 }
 
@@ -177,21 +186,21 @@ export async function updateCustomer(
   id: string,
   input: Partial<Omit<Customer, "id">>
 ): Promise<Customer> {
-  if (!supabase) throw new Error("Supabase not configured");
+  const userId = await getCurrentUserId();
   const payload: Record<string, unknown> = {};
   if (input.name !== undefined) payload.name = input.name;
   if (input.phone !== undefined) payload.phone = input.phone;
   if (input.address !== undefined) payload.address = input.address;
   if (input.email !== undefined) payload.email = input.email ?? null;
   if (input.maps_link !== undefined) payload.maps_link = input.maps_link ?? null;
-  const { data, error } = await supabase.from("customers").update(payload).eq("id", id).select().single();
+  const { data, error } = await supabase!.from("customers").update(payload).eq("id", id).eq("user_id", userId).select().single();
   if (error) throw error;
   return mapCustomer(data);
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { error } = await supabase.from("customers").delete().eq("id", id);
+  const userId = await getCurrentUserId();
+  const { error } = await supabase!.from("customers").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
 }
 
@@ -320,6 +329,7 @@ export async function createOrder(order: {
       product_name: p?.name ?? "",
       quantity: item.quantity,
       unit_price: p?.pricePerLiter ?? 0,
+      cost_price: p?.costPrice ?? 0,
     });
     if (itemError) throw itemError;
   }
@@ -401,6 +411,7 @@ export async function updateOrder(
         product_name: p?.name ?? "",
         quantity: item.quantity,
         unit_price: p?.pricePerLiter ?? 0,
+        cost_price: p?.costPrice ?? 0,
       });
     }
 
@@ -435,7 +446,8 @@ export async function updateOrder(
   }
 
   if (Object.keys(orderPayload).length > 0) {
-    const { error } = await supabase.from("orders").update(orderPayload).eq("id", id);
+    const userId = await getCurrentUserId();
+    const { error } = await supabase!.from("orders").update(orderPayload).eq("id", id).eq("user_id", userId);
     if (error) throw error;
   }
 
@@ -443,7 +455,7 @@ export async function updateOrder(
 }
 
 export async function deleteOrder(id: string): Promise<void> {
-  if (!supabase) throw new Error("Supabase not configured");
+  const userId = await getCurrentUserId();
   const order = await getOrder(id);
   if (order && isStockDeducted(order.status) && order.items?.length) {
     for (const item of order.items) {
@@ -451,8 +463,8 @@ export async function deleteOrder(id: string): Promise<void> {
       if (product) await updateProduct(item.productId, { stock: product.stock + item.quantity });
     }
   }
-  await supabase.from("order_items").delete().eq("order_id", id);
-  const { error } = await supabase.from("orders").delete().eq("id", id);
+  await supabase!.from("order_items").delete().eq("order_id", id);
+  const { error } = await supabase!.from("orders").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
 }
 
@@ -513,33 +525,33 @@ export async function updateOrderItem(
 }
 
 export async function updateProductUnitPrice(id: string, unitPrice: number): Promise<Product> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { data, error } = await supabase.from('products').update({ unit_price: unitPrice })
-    .eq('id', id).select().single();
+  const userId = await getCurrentUserId();
+  const { data, error } = await supabase!.from('products').update({ unit_price: unitPrice })
+    .eq('id', id).eq('user_id', userId).select().single();
   if (error) throw error;
   return mapProduct(data);
 }
 
 export async function updateProductCostPrice(id: string, costPrice: number): Promise<Product> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { data, error } = await supabase.from('products').update({ cost_price: costPrice })
-    .eq('id', id).select().single();
+  const userId = await getCurrentUserId();
+  const { data, error } = await supabase!.from('products').update({ cost_price: costPrice })
+    .eq('id', id).eq('user_id', userId).select().single();
   if (error) throw error;
   return mapProduct(data);
 }
 
 export async function updateProductUnitSize(id: string, unitSize: number): Promise<Product> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { data, error } = await supabase.from('products').update({ unit_size: unitSize })
-    .eq('id', id).select().single();
+  const userId = await getCurrentUserId();
+  const { data, error } = await supabase!.from('products').update({ unit_size: unitSize })
+    .eq('id', id).eq('user_id', userId).select().single();
   if (error) throw error;
   return mapProduct(data);
 }
 
 export async function updateProductReorderThreshold(id: string, threshold: number): Promise<Product> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { data, error } = await supabase.from('products').update({ reorder_threshold: threshold })
-    .eq('id', id).select().single();
+  const userId = await getCurrentUserId();
+  const { data, error } = await supabase!.from('products').update({ reorder_threshold: threshold })
+    .eq('id', id).eq('user_id', userId).select().single();
   if (error) throw error;
   return mapProduct(data);
 }

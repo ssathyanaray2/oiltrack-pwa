@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import Fuse from "fuse.js";
+import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
 import { getCustomers, getOrders } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
@@ -10,7 +12,7 @@ import type { Customer, Order } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders } from "../data/mockData";
 import { deleteCustomer } from "../../lib/api";
 import { toast } from "sonner";
-import { User, Phone, MapPin, Mail, Plus, ShoppingBag, Clock, Trash2 } from "lucide-react";
+import { User, Phone, MapPin, Mail, Plus, ShoppingBag, Clock, Trash2, Search } from "lucide-react";
 import React from "react";
 import { formatMapsLink } from "../../lib/utils";
 
@@ -20,6 +22,7 @@ export function Customers() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [pendingCustomers, setPendingCustomers] = useState<OfflineCustomer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadPending = () =>
     offlineCustomersDB.getAll().then(setPendingCustomers).catch(console.error);
@@ -71,18 +74,29 @@ export function Customers() {
     return null;
   };
 
-  const handleDelete = async (e: React.MouseEvent, customerId: string, customerName: string) => {
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
+
+  const handleDelete = (e: React.MouseEvent, customerId: string, customerName: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`Delete ${customerName}? This cannot be undone.`)) return;
+    setDeleteConfirm({ id: customerId, name: customerName });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    const { id, name } = deleteConfirm;
+    setDeleteConfirm(null);
     try {
-      await deleteCustomer(customerId);
-      setCustomers((prev) => prev.filter((c) => c.id !== customerId));
-      toast.success(`${customerName} deleted`);
+      await deleteCustomer(id);
+      setCustomers((prev) => prev.filter((c) => c.id !== id));
+      toast.success(`${name} deleted`);
     } catch {
       toast.error("Failed to delete customer");
     }
   };
+
+  const customerFuse = useMemo(() => new Fuse(customers, { keys: ["name", "phone"], threshold: 0.3 }), [customers]);
+  const filteredCustomers = searchQuery ? customerFuse.search(searchQuery).map((r) => r.item) : customers;
 
   if (loading) {
     return (
@@ -165,6 +179,18 @@ export function Customers() {
           </div>
         )}
 
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#737686]" />
+          <input
+            type="text"
+            placeholder="Search by name or phone..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#e2e7ff] text-[#131b2e] placeholder-[#737686] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563eb] border border-transparent"
+          />
+        </div>
+
         {/* Customer list */}
         {customers.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 shadow-[0_4px_16px_rgba(0,74,198,0.06)] text-center">
@@ -174,8 +200,13 @@ export function Customers() {
             <p className="font-semibold text-[#131b2e] mb-1">No customers yet</p>
             <p className="text-sm text-[#737686]">Add your first customer to get started</p>
           </div>
+        ) : filteredCustomers.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 shadow-[0_4px_16px_rgba(0,74,198,0.06)] text-center">
+            <p className="font-semibold text-[#131b2e] mb-1">No customers found</p>
+            <p className="text-sm text-[#737686]">Try a different name or phone number</p>
+          </div>
         ) : (
-          customers.map((customer) => {
+          filteredCustomers.map((customer) => {
             const totalOrders = getCustomerOrderCount(customer.id);
             const pendingOrders = getCustomerPendingOrders(customer.id);
             const initials = customer.name
@@ -235,13 +266,27 @@ export function Customers() {
                     <div className="flex items-start gap-3 text-[#434655]">
                       <MapPin className="h-4 w-4 flex-shrink-0 text-[#737686] mt-0.5" />
                       <a
-                        href={getMapsUrl(customer) ?? undefined}
+                        href={formatMapsLink(customer.address)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-sm text-[#2563eb] hover:underline leading-snug"
                         onClick={(e) => e.stopPropagation()}
                       >
                         {customer.address}
+                      </a>
+                    </div>
+                  )}
+                  {customer.maps_link && (
+                    <div className="flex items-center gap-3 text-[#434655]">
+                      <MapPin className="h-4 w-4 flex-shrink-0 text-[#737686]" />
+                      <a
+                        href={customer.maps_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-[#2563eb] hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Open in Maps
                       </a>
                     </div>
                   )}
@@ -263,6 +308,16 @@ export function Customers() {
           })
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={!!deleteConfirm}
+        title="Delete Customer"
+        message={`Delete ${deleteConfirm?.name}? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }

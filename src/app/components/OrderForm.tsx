@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { ConfirmModal } from "./ConfirmModal";
 import { useNavigate, useParams } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
 import { ArrowLeft, Save, Trash2, Share2, WifiOff, Plus, X, Sparkles, RotateCcw, CheckCircle } from "lucide-react";
@@ -41,7 +42,7 @@ export function OrderForm() {
   const [formData, setFormData] = useState({
     customerId: "",
     customerName: "",
-    date: new Date().toISOString().split("T")[0],
+    date: new Date().toLocaleDateString("en-CA"),
     status: "Pending" as Order["status"],
     paymentStatus: "Unpaid" as Order["paymentStatus"],
     paymentMethod: undefined as Order["paymentMethod"],
@@ -251,7 +252,7 @@ export function OrderForm() {
       toast.error("Please fill in all order items before sharing");
       return;
     }
-    const date = new Date(formData.date).toLocaleDateString("en-IN", {
+    const date = new Date(formData.date + "T00:00:00").toLocaleDateString("en-IN", {
       day: "numeric", month: "short", year: "numeric",
     });
     const itemLines = orderItems.map((item) => {
@@ -385,8 +386,13 @@ export function OrderForm() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm("Are you sure you want to delete this order?")) return;
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showReactivateConfirm, setShowReactivateConfirm] = useState<string | null>(null);
+
+  const handleDelete = () => setShowDeleteConfirm(true);
+
+  const confirmDelete = async () => {
+    setShowDeleteConfirm(false);
     if (!isOnline || !isSupabaseConfigured() || !id) {
       toast.success("Order deleted");
       navigate("/orders");
@@ -463,7 +469,7 @@ export function OrderForm() {
     );
   }
 
-  const isLocked = formData.status === "Packed" || formData.status === "Delivered";
+  const isLocked = isEditing && formData.status !== "Pending";
 
   return (
     <div className="min-h-screen bg-[#faf8ff] pb-32">
@@ -540,7 +546,7 @@ export function OrderForm() {
               {customers.find((c) => c.id === formData.customerId)?.address}
             </p>
           )}
-          {getLastOrder() && (
+          {!isLocked && getLastOrder() && (
             <div className="mt-3">
               <button
                 type="button"
@@ -567,7 +573,7 @@ export function OrderForm() {
                 return (
                   <div className="mt-1 bg-[#f2f3ff] rounded-xl px-4 py-3 space-y-2">
                     <p className="text-xs text-[#737686]">
-                      {new Date(last.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                      {new Date(last.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                     </p>
                     <div className="space-y-1.5">
                       {lastItems.map((item, i) => {
@@ -630,6 +636,15 @@ export function OrderForm() {
             </div>
           </div>
 
+          {isLocked && (
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2">
+              <span className="text-amber-500 text-base leading-none mt-0.5">🔒</span>
+              <p className="text-xs text-amber-700">
+                Order items can only be edited in <span className="font-semibold">Pending</span> state. Change the status to Pending to modify items.
+              </p>
+            </div>
+          )}
+
           <div className="space-y-3">
             {orderItems.map((item, index) => {
               const selectedProduct = products.find((p) => p.id === item.productId);
@@ -661,7 +676,8 @@ export function OrderForm() {
                     <select
                       value={item.productId}
                       onChange={(e) => updateItem(index, "productId", e.target.value)}
-                      className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm"
+                      disabled={isLocked}
+                      className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       required
                     >
                       <option value="">Select oil type</option>
@@ -678,7 +694,8 @@ export function OrderForm() {
                       value={item.quantity}
                       onChange={(e) => updateItem(index, "quantity", e.target.value)}
                       placeholder="Quantity (L)"
-                      className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm placeholder:text-[#737686]"
+                      disabled={isLocked}
+                      className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm placeholder:text-[#737686] disabled:opacity-50 disabled:cursor-not-allowed"
                       required
                     />
                     {item.productId && item.quantity && (
@@ -734,7 +751,8 @@ export function OrderForm() {
               onChange={(e) => {
                 const next = e.target.value as Order["status"];
                 if (existingOrder?.status === "Cancelled" && next !== "Cancelled") {
-                  if (!confirm("Reactivate this cancelled order? It will be moved back to Pending.")) return;
+                  setShowReactivateConfirm(next);
+                  return;
                 }
                 setFormData({ ...formData, status: next });
               }}
@@ -972,6 +990,29 @@ export function OrderForm() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Delete Order"
+        message="Are you sure you want to delete this order? This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      <ConfirmModal
+        isOpen={!!showReactivateConfirm}
+        title="Reactivate Order"
+        message="This cancelled order will be moved back to Pending."
+        confirmLabel="Reactivate"
+        variant="primary"
+        onConfirm={() => {
+          if (showReactivateConfirm) setFormData({ ...formData, status: showReactivateConfirm as Order["status"] });
+          setShowReactivateConfirm(null);
+        }}
+        onCancel={() => setShowReactivateConfirm(null)}
+      />
     </div>
   );
 }

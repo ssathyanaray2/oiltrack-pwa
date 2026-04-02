@@ -1,4 +1,6 @@
-import React,{ useState, useEffect } from "react";
+import React,{ useState, useEffect, useMemo } from "react";
+import Fuse from "fuse.js";
+import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
 import { getOrders, getProducts, updateOrder } from "../../lib/api";
 import { toast } from "sonner";
@@ -41,22 +43,56 @@ export function Orders() {
     });
   };
 
+  const [reactivateConfirm, setReactivateConfirm] = useState<{ orderId: string; newStatus: Order["status"] } | null>(null);
+
   const handleStatusChange = async (orderId: string, currentStatus: Order["status"], newStatus: Order["status"]) => {
     if (currentStatus === newStatus) return;
     if (currentStatus === "Cancelled" && (newStatus === "Packed" || newStatus === "Delivered")) return;
     if (currentStatus === "Cancelled") {
-      if (!confirm("Reactivate this cancelled order? It will be moved back to Pending.")) return;
+      setReactivateConfirm({ orderId, newStatus });
+      return;
     }
     setSavingOrderId(orderId);
-    // Optimistic update
-    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: newStatus } : o));
+    setOrders((prev) => {
+      const next = prev.map((o) => o.id === orderId ? { ...o, status: newStatus } : o);
+      setCachedOrders(next);
+      return next;
+    });
     try {
       await updateOrder(orderId, { status: newStatus });
-      setCachedOrders(orders.map((o) => o.id === orderId ? { ...o, status: newStatus } : o));
     } catch (err) {
       console.error(err);
       toast.error("Failed to update status");
-      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, status: currentStatus } : o));
+      setOrders((prev) => {
+        const rolled = prev.map((o) => o.id === orderId ? { ...o, status: currentStatus } : o);
+        setCachedOrders(rolled);
+        return rolled;
+      });
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const confirmReactivate = async () => {
+    if (!reactivateConfirm) return;
+    const { orderId, newStatus } = reactivateConfirm;
+    setReactivateConfirm(null);
+    setSavingOrderId(orderId);
+    setOrders((prev) => {
+      const next = prev.map((o) => o.id === orderId ? { ...o, status: newStatus } : o);
+      setCachedOrders(next);
+      return next;
+    });
+    try {
+      await updateOrder(orderId, { status: newStatus });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update status");
+      setOrders((prev) => {
+        const rolled = prev.map((o) => o.id === orderId ? { ...o, status: "Cancelled" } : o);
+        setCachedOrders(rolled);
+        return rolled;
+      });
     } finally {
       setSavingOrderId(null);
     }
@@ -66,14 +102,21 @@ export function Orders() {
     if (currentPayment === newPayment) return;
     setSavingOrderId(orderId);
     const clearedMethod = newPayment === "Unpaid" ? null : undefined;
-    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentStatus: newPayment, ...(newPayment === "Unpaid" ? { paymentMethod: undefined } : {}) } : o));
+    setOrders((prev) => {
+      const next = prev.map((o) => o.id === orderId ? { ...o, paymentStatus: newPayment, ...(newPayment === "Unpaid" ? { paymentMethod: undefined } : {}) } : o);
+      setCachedOrders(next);
+      return next;
+    });
     try {
       await updateOrder(orderId, { paymentStatus: newPayment, ...(clearedMethod !== undefined ? { paymentMethod: clearedMethod } : {}) });
-      setCachedOrders(orders.map((o) => o.id === orderId ? { ...o, paymentStatus: newPayment } : o));
     } catch (err) {
       console.error(err);
       toast.error("Failed to update payment status");
-      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentStatus: currentPayment } : o));
+      setOrders((prev) => {
+        const rolled = prev.map((o) => o.id === orderId ? { ...o, paymentStatus: currentPayment } : o);
+        setCachedOrders(rolled);
+        return rolled;
+      });
     } finally {
       setSavingOrderId(null);
     }
@@ -81,14 +124,21 @@ export function Orders() {
 
   const handlePaymentMethodChange = async (orderId: string, newMethod: Order["paymentMethod"]) => {
     setSavingOrderId(orderId);
-    setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentMethod: newMethod } : o));
+    setOrders((prev) => {
+      const next = prev.map((o) => o.id === orderId ? { ...o, paymentMethod: newMethod } : o);
+      setCachedOrders(next);
+      return next;
+    });
     try {
       await updateOrder(orderId, { paymentMethod: newMethod });
-      setCachedOrders(orders.map((o) => o.id === orderId ? { ...o, paymentMethod: newMethod } : o));
     } catch (err) {
       console.error(err);
       toast.error("Failed to update payment method");
-      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, paymentMethod: undefined } : o));
+      setOrders((prev) => {
+        const rolled = prev.map((o) => o.id === orderId ? { ...o, paymentMethod: undefined } : o);
+        setCachedOrders(rolled);
+        return rolled;
+      });
     } finally {
       setSavingOrderId(null);
     }
@@ -199,15 +249,17 @@ export function Orders() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = new Date(dateString + "T00:00:00");
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
 
-  const filteredOrders = orders
+  const orderFuse = useMemo(() => new Fuse(orders, { keys: ["customerName"], threshold: 0.3 }), [orders]);
+  const searchedOrders = searchQuery ? orderFuse.search(searchQuery).map((r) => r.item) : orders;
+
+  const filteredOrders = searchedOrders
     .filter((order) => {
       const matchesStatus = statusFilter === "All" || order.status === statusFilter;
-      const matchesSearch = order.customerName.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesStatus && matchesSearch;
+      return matchesStatus;
     })
     .sort((a, b) => {
       const dateA = new Date(a.date).getTime();
@@ -584,6 +636,16 @@ export function Orders() {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={!!reactivateConfirm}
+        title="Reactivate Order"
+        message="This cancelled order will be moved back to Pending."
+        confirmLabel="Reactivate"
+        variant="primary"
+        onConfirm={confirmReactivate}
+        onCancel={() => setReactivateConfirm(null)}
+      />
     </div>
   );
 }

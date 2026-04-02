@@ -95,7 +95,7 @@ export function CustomerDetail() {
   };
 
   const formatDate = (dateString: string) =>
-    new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    new Date(dateString + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
   const getInitials = (name: string) =>
     name
@@ -259,7 +259,7 @@ export function CustomerDetail() {
             )}
             {customer.address && (
               <a
-                href={formatMapsLink(customer.address)}
+                href={customer.maps_link?.trim() || formatMapsLink(customer.address)}
                 className="flex items-center gap-3 py-3 group"
                 target="_blank"
                 rel="noopener noreferrer"

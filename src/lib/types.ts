@@ -31,7 +31,7 @@ export interface Order {
   paymentStatus: "Paid" | "Unpaid";
   paymentMethod?: "Cash" | "UPI";
   notes?: string;
-  items?: Array<{ productId: string; quantity: number }>;
+  items?: Array<{ productId: string; quantity: number; unitPrice?: number; costPrice?: number }>;
 }
 
 export interface OrderItem {
