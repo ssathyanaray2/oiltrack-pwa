@@ -1,16 +1,21 @@
 import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router";
-import { Home, Package, ShoppingCart, Users, WifiOff, LogOut } from "lucide-react";
+import { Home, Package, ShoppingCart, Users, WifiOff, LogOut, RefreshCw } from "lucide-react";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getFeatureFlags } from "../../lib/api";
 import { FeatureFlagsContext, defaultFlags, type FeatureFlags } from "../../lib/featureFlags";
+import { useRegisterSW } from "virtual:pwa-register/react";
 import React from "react";
 
 export function Root() {
   const location = useLocation();
   const isOnline = useOnlineStatus();
   const [flags, setFlags] = useState<FeatureFlags>(defaultFlags);
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW();
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !isOnline) return;
@@ -43,6 +48,20 @@ export function Root() {
           <div className="sticky top-0 z-40 bg-orange-100 border-b border-orange-200 text-orange-800 px-4 py-3 flex items-center justify-center gap-2">
             <WifiOff className="h-4 w-4 flex-shrink-0" />
             <span className="text-sm font-semibold">You're offline. Data loaded from cache.</span>
+          </div>
+        )}
+
+        {/* Update Banner */}
+        {needRefresh && (
+          <div className="sticky top-0 z-40 bg-[#eaedff] border-b border-[#c3c6d7] px-4 py-3 flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-[#131b2e]">A new update is available</span>
+            <button
+              onClick={() => updateServiceWorker(true)}
+              className="flex items-center gap-1.5 bg-[#2563eb] hover:bg-[#004ac6] text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95 flex-shrink-0"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
           </div>
         )}
 

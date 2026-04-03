@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       // Use the existing public/manifest.json
       manifest: false,
       workbox: {
