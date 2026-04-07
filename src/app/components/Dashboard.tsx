@@ -39,8 +39,8 @@ function buildMonthlyData(orders: Order[], products: Product[], mode: ChartMode,
       : [{ productId: order.productId, quantity: order.quantity }];
     items.forEach((item) => {
       const product = products.find((p) => p.id === item.productId);
-      const unitPrice = item.unitPrice || product?.pricePerLiter || 0;
-      const costPrice = item.costPrice || product?.costPrice || 0;
+      const unitPrice = item.unitPrice ?? 0;
+      const costPrice = item.costPrice ?? 0;
       const perUnit = mode === "profit"
         ? Math.max(0, unitPrice - costPrice)
         : unitPrice;
@@ -59,7 +59,9 @@ function buildProductVolume(orders: Order[], products: Product[], year: number):
       ? order.items
       : [{ productId: order.productId, quantity: order.quantity }];
     items.forEach((item) => {
-      byProduct[item.productId] = (byProduct[item.productId] ?? 0) + item.quantity;
+      const product = products.find((p) => p.id === item.productId);
+      const litres = item.quantity * (product?.unitSize ?? 1);
+      byProduct[item.productId] = (byProduct[item.productId] ?? 0) + litres;
     });
   });
   return products
@@ -68,9 +70,9 @@ function buildProductVolume(orders: Order[], products: Product[], year: number):
     .sort((a, b) => b.value - a.value);
 }
 
-function getLostCustomers(orders: Order[]): { customerId: string; customerName: string; lastOrderDate: Date; monthsAgo: number }[] {
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+function getLostCustomers(orders: Order[], months: number = 6): { customerId: string; customerName: string; lastOrderDate: Date; monthsAgo: number }[] {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
   const lastOrder = new Map<string, { date: Date; customerName: string }>();
   orders.forEach((order) => {
     if (order.status === "Cancelled" || !order.customerId) return;
@@ -82,7 +84,7 @@ function getLostCustomers(orders: Order[]): { customerId: string; customerName: 
   });
   const lost: { customerId: string; customerName: string; lastOrderDate: Date; monthsAgo: number }[] = [];
   lastOrder.forEach(({ date, customerName }, customerId) => {
-    if (date < sixMonthsAgo) {
+    if (date < cutoff) {
       const monthsAgo = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24 * 30));
       lost.push({ customerId, customerName, lastOrderDate: date, monthsAgo });
     }
@@ -107,6 +109,7 @@ export function Dashboard() {
   const [chartMode, setChartMode] = useState<ChartMode>("sales");
   const [showChartDropdown, setShowChartDropdown] = useState(false);
   const [showInactiveCustomers, setShowInactiveCustomers] = useState(false);
+  const [inactiveMonths, setInactiveMonths] = useState(6);
   const [chartYear, setChartYear] = useState(new Date().getFullYear());
   const [pieYear, setPieYear] = useState(new Date().getFullYear());
   const availableYears = useMemo(() => {
@@ -219,7 +222,7 @@ export function Dashboard() {
         ? order.items
         : [{ productId: order.productId, quantity: order.quantity }];
       return sum + items.reduce((s, item) => {
-        const unitPrice = item.unitPrice ?? products.find((p) => p.id === item.productId)?.pricePerLiter ?? 0;
+        const unitPrice = item.unitPrice ?? 0;
         return s + unitPrice * item.quantity;
       }, 0);
     }, 0);
@@ -236,7 +239,7 @@ export function Dashboard() {
       ? order.items
       : [{ productId: order.productId, quantity: order.quantity }];
     return sum + items.reduce((s, item) => {
-      const unitPrice = item.unitPrice ?? products.find((p) => p.id === item.productId)?.pricePerLiter ?? 0;
+      const unitPrice = item.unitPrice ?? 0;
       return s + unitPrice * item.quantity;
     }, 0);
   }, 0);
@@ -250,7 +253,10 @@ export function Dashboard() {
     const items = order.items?.length
       ? order.items
       : [{ productId: order.productId, quantity: order.quantity }];
-    return sum + items.reduce((s, item) => s + item.quantity, 0);
+    return sum + items.reduce((s, item) => {
+      const product = products.find((p) => p.id === item.productId);
+      return s + item.quantity * (product?.unitSize ?? 1);
+    }, 0);
   }, 0);
 
 
@@ -265,7 +271,7 @@ export function Dashboard() {
 
   const chartData = buildMonthlyData(orders, products, chartMode, chartYear);
   const productVolume = buildProductVolume(orders, products, pieYear);
-  const lostCustomers = getLostCustomers(orders);
+  const lostCustomers = getLostCustomers(orders, inactiveMonths);
 
   const chartLabels: Record<ChartMode, string> = {
     sales: "Monthly Sales",
@@ -517,7 +523,15 @@ export function Dashboard() {
                     : order.status === "Cancelled"
                     ? { border: "#ba1a1a", bg: "bg-red-100", text: "text-red-700" }
                     : { border: "#943700", bg: "bg-orange-100", text: "text-orange-700" };
-                const amount = product ? product.pricePerLiter * order.quantity : 0;
+                const amount = order.items?.length
+                  ? order.items.reduce((s, item) => s + item.quantity * (item.unitPrice ?? 0), 0)
+                  : 0;
+                const itemSummary = order.items?.length
+                  ? order.items.map((item) => {
+                      const p = products.find((pr) => pr.id === item.productId);
+                      return `${p?.name ?? "Product"} ×${item.quantity}`;
+                    }).join(", ")
+                  : `${product?.name ?? "Product"} ×${order.quantity}`;
                 return (
                   <div
                     key={order.id}
@@ -530,9 +544,7 @@ export function Dashboard() {
                       </div>
                       <div className="min-w-0">
                         <p className="font-bold text-sm text-[#131b2e] truncate">{order.customerName}</p>
-                        <p className="text-xs text-[#434655] truncate">
-                          {product?.name ?? "Product"}, {order.quantity} {product?.unit ?? "units"}
-                        </p>
+                        <p className="text-xs text-[#434655] truncate">{itemSummary}</p>
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
@@ -690,24 +702,45 @@ export function Dashboard() {
         </section>
 
         {/* Lost Customers */}
-        {lostCustomers.length > 0 && (
-          <section className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] overflow-hidden">
-            <button
-              onClick={() => setShowInactiveCustomers((v) => !v)}
-              className="w-full flex items-center gap-2 px-5 py-4 hover:bg-[#f2f3ff] transition-colors"
-            >
-              <UserX className="h-4 w-4 text-[#ba1a1a] flex-shrink-0" />
-              <h2 className="text-base font-bold text-[#131b2e] tracking-tight">Inactive Customers</h2>
-              <span className="text-xs font-semibold text-[#ba1a1a] bg-red-50 px-2 py-0.5 rounded-full">
-                {lostCustomers.length}
-              </span>
-              <ChevronDown className={`h-4 w-4 text-[#737686] ml-auto transition-transform duration-200 ${showInactiveCustomers ? "rotate-180" : ""}`} />
-            </button>
+        <section className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4">
+              <button
+                onClick={() => setShowInactiveCustomers((v) => !v)}
+                className="flex items-center gap-2 flex-1 min-w-0"
+              >
+                <UserX className="h-4 w-4 text-[#ba1a1a] flex-shrink-0" />
+                <h2 className="text-base font-bold text-[#131b2e] tracking-tight">Inactive Customers</h2>
+                <span className="text-xs font-semibold text-[#ba1a1a] bg-red-50 px-2 py-0.5 rounded-full">
+                  {lostCustomers.length}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-[#737686] ml-2 transition-transform duration-200 ${showInactiveCustomers ? "rotate-180" : ""}`} />
+              </button>
+              <div className="flex items-center gap-0.5 rounded-xl px-1 py-1 ml-2 flex-shrink-0">
+                <button
+                  onClick={() => setInactiveMonths((m) => Math.max(1, m - 1))}
+                  className="p-1 rounded-lg hover:bg-[#e2e7ff] transition-colors active:scale-95"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 text-[#434655]" />
+                </button>
+                <span className="text-xs font-bold text-[#131b2e] w-12 text-center">{inactiveMonths}</span>
+                <button
+                  onClick={() => setInactiveMonths((m) => Math.min(36, m + 1))}
+                  className="p-1 rounded-lg hover:bg-[#e2e7ff] transition-colors active:scale-95"
+                >
+                  <ChevronRight className="h-3.5 w-3.5 text-[#434655]" />
+                </button>
+              </div>
+            </div>
 
             {showInactiveCustomers && (
               <>
-                <p className="text-xs text-[#737686] px-5 pb-3">No orders in the last 6 months</p>
+                <div className="px-5 pb-3 pt-0">
+                  <p className="text-xs text-[#737686]">No orders in the last {inactiveMonths} months</p>
+                </div>
                 <div className="border-t border-[#f2f3ff]">
+                  {lostCustomers.length === 0 && (
+                    <p className="text-sm text-[#737686] text-center py-6">All customers are active within the last {inactiveMonths} months.</p>
+                  )}
                   {lostCustomers.map((c, i) => (
                     <Link
                       key={c.customerId}
@@ -738,7 +771,6 @@ export function Dashboard() {
               </>
             )}
           </section>
-        )}
       </main>
     </div>
   );

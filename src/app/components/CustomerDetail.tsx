@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router";
-import { getCustomer, getOrders, getProducts } from "../../lib/api";
+import { getCustomer, getOrders, getProducts, getBatchesForProduct } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedCustomers, getCachedOrders, getCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
-import type { Customer, Order, Product } from "../../lib/types";
+import type { Customer, Order, Product, ProductBatch } from "../../lib/types";
 import { customers as mockCustomers, orders as mockOrders, products as mockProducts } from "../data/mockData";
 import { ArrowLeft, User, Phone, MapPin, Mail, Calendar, Package as PackageIcon, Pencil, ContactRound, IndianRupee } from "lucide-react";
 import React from "react";
@@ -18,6 +18,7 @@ export function CustomerDetail() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [batchesByProduct, setBatchesByProduct] = useState<Record<string, ProductBatch[]>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,6 +38,10 @@ export function CustomerDetail() {
           setCustomer(customerData ?? null);
           setOrders(ordersData);
           setProducts(productsData);
+          const batchResults = await Promise.all(
+            productsData.map((p) => getBatchesForProduct(p.id).then((b) => ({ id: p.id, batches: b })))
+          );
+          setBatchesByProduct(Object.fromEntries(batchResults.map(({ id, batches }) => [id, batches])));
         } catch (e) {
           console.error(e);
           const cc = getCachedCustomers() as Customer[] | null;
@@ -107,7 +112,21 @@ export function CustomerDetail() {
 
   const sharePrices = () => {
     if (!products.length) return;
-    const lines = products.map((p) => `• ${p.name}: ₹${p.pricePerLiter}/${p.unit}`).join("\n");
+    const lines = products.map((p) => {
+      const batches = batchesByProduct[p.id] ?? [];
+      const oldest = batches
+        .filter((b) => b.numberOfBottles > 0)
+        .sort((a, b) => {
+          if (!a.manufactureDate && !b.manufactureDate) return 0;
+          if (!a.manufactureDate) return 1;
+          if (!b.manufactureDate) return -1;
+          return new Date(a.manufactureDate).getTime() - new Date(b.manufactureDate).getTime();
+        })[0];
+      const price = oldest?.unitPrice;
+      if (!price) return null;
+      return `• ${p.name} (${p.unitSize}L/bottle): ₹${price}/bottle`;
+    }).filter(Boolean).join("\n");
+    if (!lines) return;
     const message = `*Current Prices*\n\n${lines}`;
     const rawPhone = customer?.phone?.replace(/\D/g, "") ?? "";
     const phone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;

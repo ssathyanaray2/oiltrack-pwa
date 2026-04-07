@@ -186,14 +186,11 @@ export function Orders() {
     return product?.name || "Unknown Product";
   };
 
-  const getProductPrice = (productId: string) => {
-    const product = products.find((p) => p.id === productId);
-    return product?.pricePerLiter || 0;
-  };
-
-  const calculateOrderTotal = (productId: string, quantity: number) => {
-    const pricePerLiter = getProductPrice(productId);
-    return pricePerLiter * quantity;
+  const calculateOrderTotal = (order: Order) => {
+    if (order.items && order.items.length > 0) {
+      return order.items.reduce((sum, item) => sum + item.quantity * (item.unitPrice ?? 0), 0);
+    }
+    return 0;
   };
 
   const getStatusColor = (status: string) => {
@@ -437,7 +434,7 @@ export function Orders() {
         ) : viewMode === "card" ? (
           <div className="space-y-3">
             {filteredOrders.map((order) => {
-              const total = calculateOrderTotal(order.productId, order.quantity);
+              const total = calculateOrderTotal(order);
               const formattedTotal = total.toLocaleString("en-IN", { maximumFractionDigits: 0 });
               const isSaving = savingOrderId === order.id;
               return (
@@ -550,8 +547,8 @@ export function Orders() {
         ) : (
           <div className="space-y-2">
             {filteredOrders.map((order) => {
-              const total = calculateOrderTotal(order.productId, order.quantity);
-              const formattedTotalList = total.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+              const total = calculateOrderTotal(order);
+              const formattedTotalList = total.toLocaleString("en-IN", { maximumFractionDigits: 2 });
               const isSaving = savingOrderId === order.id;
               return (
                 <Link

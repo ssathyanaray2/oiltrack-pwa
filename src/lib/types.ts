@@ -5,8 +5,6 @@ export interface Product {
   stock: number;
   unit: string;
   lowStockThreshold: number;
-  pricePerLiter: number;
-  costPrice: number;
   unitSize: number;
 }
 
@@ -31,7 +29,7 @@ export interface Order {
   paymentStatus: "Paid" | "Unpaid";
   paymentMethod?: "Cash" | "UPI";
   notes?: string;
-  items?: Array<{ productId: string; quantity: number; unitPrice?: number; costPrice?: number }>;
+  items?: Array<{ productId: string; quantity: number; unitPrice?: number; costPrice?: number; batchId?: string }>;
 }
 
 export interface OrderItem {
@@ -49,4 +47,19 @@ export interface SalesData {
 export interface InventoryData {
   month: string;
   level: number;
+}
+
+export interface ProductBatch {
+  id: string;
+  productId: string;
+  batchNumber: string;
+  numberOfBottles: number;
+  bottleSizeLitres: number;
+  unitPrice: number;
+  costPrice: number;
+  quantityLitres: number;
+  manufactureDate: string | null;
+  expiryDate: string | null;
+  notes?: string;
+  createdAt?: string;
 }

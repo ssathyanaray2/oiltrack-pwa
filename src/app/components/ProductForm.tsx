@@ -15,9 +15,6 @@ export function ProductForm() {
   const [formData, setFormData] = useState({
     name: "",
     unit: "Litres",
-    stock: "",
-    pricePerLiter: "",
-    costPrice: "",
     lowStockThreshold: "",
     unitSize: "",
   });
@@ -36,15 +33,10 @@ export function ProductForm() {
     e.preventDefault();
 
     const name = formData.name.trim();
-    const stock = parseFloat(formData.stock);
-    const pricePerLiter = parseFloat(formData.pricePerLiter);
-    const costPrice = formData.costPrice ? parseFloat(formData.costPrice) : 0;
     const lowStockThreshold = parseFloat(formData.lowStockThreshold);
     const unitSize = formData.unitSize ? parseFloat(formData.unitSize) : 1;
 
     if (!name) { toast.error("Product name is required"); return; }
-    if (isNaN(stock) || stock < 0) { toast.error("Enter a valid initial stock"); return; }
-    if (isNaN(pricePerLiter) || pricePerLiter <= 0) { toast.error("Enter a valid selling price"); return; }
     if (isNaN(lowStockThreshold) || lowStockThreshold < 0) { toast.error("Enter a valid reorder threshold"); return; }
 
     if (!isSupabaseConfigured() || !isOnline) {
@@ -57,9 +49,6 @@ export function ProductForm() {
       const created = await createProduct({
         name,
         unit: formData.unit,
-        stock,
-        pricePerLiter,
-        costPrice,
         lowStockThreshold,
         unitSize,
       });
@@ -181,61 +170,6 @@ export function ProductForm() {
               <option value="Barrels">Barrels</option>
               <option value="Units">Units</option>
             </select>
-          </div>
-
-          {/* Initial Stock */}
-          <div>
-            <label htmlFor="stock" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
-              Initial Stock <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              id="stock"
-              name="stock"
-              min="0"
-              value={formData.stock}
-              onChange={handleChange}
-              className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
-              placeholder="0"
-              required
-            />
-          </div>
-
-          {/* Selling Price + Cost Price side by side */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="pricePerLiter" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
-                Selling Price (₹) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                id="pricePerLiter"
-                name="pricePerLiter"
-                min="0"
-                step="0.01"
-                value={formData.pricePerLiter}
-                onChange={handleChange}
-                className="w-full px-4 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
-                placeholder="0.00"
-                required
-              />
-            </div>
-            <div>
-              <label htmlFor="costPrice" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
-                Cost Price (₹)
-              </label>
-              <input
-                type="number"
-                id="costPrice"
-                name="costPrice"
-                min="0"
-                step="0.01"
-                value={formData.costPrice}
-                onChange={handleChange}
-                className="w-full px-4 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
-                placeholder="0.00"
-              />
-            </div>
           </div>
 
           {/* Reorder Threshold + Container Size side by side */}

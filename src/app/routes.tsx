@@ -10,6 +10,7 @@ import { OrderForm } from "./components/OrderForm";
 import { Customers } from "./components/Customers";
 import { CustomerDetail } from "./components/CustomerDetail";
 import { CustomerForm } from "./components/CustomerForm";
+import { ProductDetail } from "./components/ProductDetail";
 
 export const router = createBrowserRouter([
   { path: "/login", Component: Login },
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
           { index: true, Component: Dashboard },
           { path: "inventory", Component: Inventory },
           { path: "inventory/new", Component: ProductForm },
+          { path: "inventory/:id", Component: ProductDetail },
           { path: "orders", Component: Orders },
           { path: "orders/new", Component: OrderForm },
           { path: "orders/edit/:id", Component: OrderForm },

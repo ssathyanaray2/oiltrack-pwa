@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
-import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, TrendingUp, TrendingDown, Minus as MinusIcon, ChevronDown, Search, Trash2, Send } from "lucide-react";
+import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, /* TrendingUp, TrendingDown, Minus as MinusIcon, */ ChevronDown, Search, Trash2, Send, ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
 import { toast } from "sonner";
-import { getProducts, updateProductStock, updateProductUnitPrice, updateProductCostPrice, updateProductUnitSize, updateProductReorderThreshold, deleteProduct } from "../../lib/api";
+import { getProducts, updateProductUnitSize, updateProductReorderThreshold, deleteProduct } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
-import { extractPricesFromImage, type PriceChange } from "../../lib/priceAnalysis";
+// import { extractPricesFromImage, type PriceChange } from "../../lib/priceAnalysis"; // DISABLED: AI price feature paused until batch-price UX is designed
 import type { Product } from "../../lib/types";
 import { products as mockProducts } from "../data/mockData";
 import React from "react";
@@ -26,7 +26,7 @@ export function Inventory() {
     productId: string;
     productName: string;
     unit: string;
-    action: "add" | "remove" | "pricePerLiter" | "costPrice" | "unitSize" | "reorderThreshold";
+    action: "reorderThreshold" | "unitSize";
   } | null>(null);
   const [inputAmount, setInputAmount] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -55,7 +55,7 @@ export function Inventory() {
         tempId: p.id,
         name: p.name,
         quantity: Math.max(1, p.lowStockThreshold - p.stock),
-        unit: p.unit,
+        unit: "bottles",
       }));
     setRestockItems(items);
     setRestockMessage(buildMessage(items));
@@ -76,7 +76,7 @@ export function Inventory() {
       toast.error("Already in the list");
       return;
     }
-    const next = [...restockItems, { tempId: product.id, name: product.name, quantity: product.lowStockThreshold, unit: product.unit }];
+    const next = [...restockItems, { tempId: product.id, name: product.name, quantity: product.lowStockThreshold, unit: "bottles" }];
     updateRestockItems(next);
     setNewItemProductId("");
   };
@@ -86,12 +86,14 @@ export function Inventory() {
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  // Price-update-from-image state
+  // Price-update-from-image state — DISABLED (prices now live on batches)
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzing] = useState(false); // always false while AI price feature is disabled
+  /* DISABLED state for AI price feature
   const [priceChanges, setPriceChanges] = useState<PriceChange[]>([]);
   const [showPriceModal, setShowPriceModal] = useState(false);
   const [applyingPrices, setApplyingPrices] = useState(false);
+  */
 
   useEffect(() => {
     const load = async () => {
@@ -121,7 +123,7 @@ export function Inventory() {
     productId: string,
     productName: string,
     unit: string,
-    action: "add" | "remove" | "pricePerLiter" | "costPrice" | "reorderThreshold",
+    action: "reorderThreshold" | "unitSize",
     initialValue = ""
   ) => {
     setModalData({ productId, productName, unit, action });
@@ -164,42 +166,6 @@ export function Inventory() {
     if (!modalData || confirming) return;
     setConfirming(true);
     try {
-      if (modalData.action === "pricePerLiter") {
-        const newPrice = parseFloat(inputAmount);
-        if (isNaN(newPrice) || newPrice <= 0) { toast.error("Please enter a valid price"); return; }
-        if (isSupabaseConfigured() && isOnline) {
-          try {
-            const updated = await updateProductUnitPrice(modalData.productId, newPrice);
-            setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-            setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p));
-            toast.success(`Price updated to ₹${newPrice} for ${modalData.productName}`);
-          } catch (e) { toast.error("Failed to update price"); console.error(e); }
-        } else {
-          const next = products.map((p) => p.id === modalData.productId ? { ...p, pricePerLiter: newPrice } : p);
-          setProducts(next); setCachedProducts(next);
-          toast.success(`Price updated to ₹${newPrice} (saved locally)`);
-        }
-        closeModal(); return;
-      }
-
-      if (modalData.action === "costPrice") {
-        const newPrice = parseFloat(inputAmount);
-        if (isNaN(newPrice) || newPrice <= 0) { toast.error("Please enter a valid price"); return; }
-        if (isSupabaseConfigured() && isOnline) {
-          try {
-            const updated = await updateProductCostPrice(modalData.productId, newPrice);
-            setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-            setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, costPrice: newPrice } : p));
-            toast.success(`Cost price updated to ₹${newPrice} for ${modalData.productName}`);
-          } catch (e) { toast.error("Failed to update cost price"); console.error(e); }
-        } else {
-          const next = products.map((p) => p.id === modalData.productId ? { ...p, costPrice: newPrice } : p);
-          setProducts(next); setCachedProducts(next);
-          toast.success(`Cost price updated to ₹${newPrice} (saved locally)`);
-        }
-        closeModal(); return;
-      }
-
       if (modalData.action === "unitSize") {
         const newSize = parseFloat(inputAmount);
         if (isNaN(newSize) || newSize <= 0) { toast.error("Please enter a valid container size"); return; }
@@ -235,62 +201,18 @@ export function Inventory() {
         }
         closeModal(); return;
       }
-
-      const amount = parseInt(inputAmount);
-      if (isNaN(amount) || amount <= 0) { toast.error("Please enter a valid amount"); return; }
-      const change = modalData.action === "add" ? amount : -amount;
-      const product = products.find((p) => p.id === modalData.productId);
-      const newStock = product ? Math.max(0, product.stock + change) : 0;
-
-      if (isSupabaseConfigured() && isOnline) {
-        try {
-          const updated = await updateProductStock(modalData.productId, change);
-          setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-          setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, stock: newStock } : p));
-          const action = change > 0 ? "added to" : "removed from";
-          toast.success(`${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName}`);
-        } catch (e) { toast.error("Failed to update stock"); console.error(e); }
-      } else {
-        const next = products.map((p) => p.id === modalData.productId ? { ...p, stock: newStock } : p);
-        setProducts(next); setCachedProducts(next);
-        const action = change > 0 ? "added to" : "removed from";
-        toast.success(`${Math.abs(change)} ${product?.unit.toLowerCase() ?? ""} ${action} ${modalData.productName} (saved locally)`);
-      }
-      closeModal();
     } finally {
       setConfirming(false);
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!fileInputRef.current) return;
-    fileInputRef.current.value = "";
-    if (!file) return;
-    const supported = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-    if (!supported.includes(file.type)) { toast.error("Please upload a JPG, PNG, WebP, or GIF image"); return; }
-    setAnalyzing(true);
-    toast.loading("Reading price list…", { id: "price-analysis" });
-    try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => { const result = reader.result as string; resolve(result.split(",")[1]); };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const changes = await extractPricesFromImage(base64, file.type as "image/jpeg" | "image/png" | "image/webp" | "image/gif", products);
-      toast.dismiss("price-analysis");
-      if (changes.length === 0) { toast.info("No matching products or price changes found in the image"); return; }
-      setPriceChanges(changes);
-      setShowPriceModal(true);
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to analyse image — check your API key and try again", { id: "price-analysis" });
-    } finally {
-      setAnalyzing(false);
-    }
+  // TODO: AI price-from-image — disabled until prices-per-batch UX is designed.
+  // Prices now live on product_batches (unit_price, cost_price), not on products.
+  // Re-enable once extractPricesFromImage is updated to work with batch prices.
+  const handleImageUpload = (_e: React.ChangeEvent<HTMLInputElement>) => {
+    toast.info("Price updates are now managed per batch. Open a product to edit batch prices.");
   };
-
+  /* DISABLED handleApplyPrices — kept for reference when re-enabling AI price feature
   const handleApplyPrices = async () => {
     setApplyingPrices(true);
     try {
@@ -313,6 +235,7 @@ export function Inventory() {
       setApplyingPrices(false);
     }
   };
+  */
 
   const getStockStatus = (stock: number, threshold: number) => {
     if (stock === 0) return { level: "critical" as const };
@@ -509,7 +432,7 @@ export function Inventory() {
               <ul className="px-5 pb-4 space-y-1 border-t border-orange-200 pt-3">
                 {lowStockProducts.map((p) => (
                   <li key={p.id} className="text-sm text-orange-800">
-                    • {p.name}: <span className="font-semibold">{p.stock} {p.unit}</span>
+                    • {p.name}: <span className="font-semibold">{p.stock} bottles</span>
                   </li>
                 ))}
               </ul>
@@ -530,7 +453,7 @@ export function Inventory() {
               const borderColor = status.level === "critical" ? "#ba1a1a" : status.level === "low" ? "#943700" : "#004ac6";
               const iconBg = status.level === "critical" ? "bg-[#ffdad6]" : status.level === "low" ? "bg-[#ffdbcd]" : "bg-[#eaedff]";
               const iconColor = status.level === "critical" ? "text-[#ba1a1a]" : status.level === "low" ? "text-[#943700]" : "text-[#004ac6]";
-              const barColor = status.level === "critical" ? "#ba1a1a" : status.level === "low" ? "#943700" : "#004ac6";
+              // const barColor = status.level === "critical" ? "#ba1a1a" : status.level === "low" ? "#943700" : "#004ac6"; // unused while stock bar is hidden
               const badgeBg = status.level === "critical" ? "bg-[#ffdad6] text-[#93000a]" : status.level === "low" ? "bg-[#ffdbcd] text-[#7d2d00]" : "bg-[#acbfff] text-[#394c84]";
               const badgeLabel = status.level === "critical" ? "Critical" : status.level === "low" ? "Low Stock" : "In Stock";
 
@@ -570,24 +493,9 @@ export function Inventory() {
                     <div>
                       <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Current Stock</p>
                       <p className="text-2xl font-extrabold text-[#131b2e]">
-                        {product.stock.toLocaleString()} <span className="text-sm font-medium text-[#434655]">{product.unit}</span>
+                        {product.stock.toLocaleString()} <span className="text-sm font-medium text-[#434655]">bottles</span>
                       </p>
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => openModal(product.id, product.name, product.unit, "remove")}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#c3c6d7] text-[#737686] hover:border-[#ba1a1a] hover:text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors active:scale-95"
-                          title="Remove stock"
-                        >
-                          <Minus className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => openModal(product.id, product.name, product.unit, "add")}
-                          className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#004ac6] text-[#004ac6] hover:bg-[#004ac6] hover:text-white transition-colors active:scale-95"
-                          title="Add stock"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      <p className="text-[10px] text-[#737686] mt-1">{product.unitSize} L each</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Reorder At</p>
@@ -597,38 +505,22 @@ export function Inventory() {
                         title="Edit reorder threshold"
                       >
                         <p className="text-2xl font-extrabold text-[#131b2e]">
-                          {product.lowStockThreshold.toLocaleString()} <span className="text-sm font-medium text-[#434655]">{product.unit}</span>
+                          {product.lowStockThreshold.toLocaleString()} <span className="text-sm font-medium text-[#434655]">bottles</span>
                         </p>
                         <Pencil className="h-3.5 w-3.5 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                       </button>
                     </div>
                   </div>
 
-                  {/* Price Row */}
-                  <div className="grid grid-cols-2 gap-4 mb-1">
-                    <div>
-                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Selling Price</p>
-                      <button
-                        onClick={() => openModal(product.id, product.name, product.unit, "pricePerLiter")}
-                        className="flex items-center gap-1.5 group"
-                        title="Edit selling price"
-                      >
-                        <span className="text-base font-semibold text-[#131b2e]">₹{product.pricePerLiter}</span>
-                        <span className="text-xs text-[#737686]">/ {product.unit.toLowerCase()}</span>
-                        <Pencil className="h-3 w-3 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                      </button>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Cost Price</p>
-                      <button
-                        onClick={() => openModal(product.id, product.name, product.unit, "costPrice")}
-                        className="flex items-center gap-1.5 group"
-                        title="Edit cost price"
-                      >
-                        <span className="text-base font-semibold text-[#131b2e]">₹{product.costPrice}</span>
-                        <Pencil className="h-3 w-3 text-[#737686] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                      </button>
-                    </div>
+                  {/* View Batches */}
+                  <div className="pt-2 border-t border-[#f2f3ff] flex justify-end">
+                    <Link
+                      to={`/inventory/${product.id}`}
+                      className="flex items-center gap-1 text-xs text-[#2563eb] font-semibold hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      View Batches <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
                   </div>
 
                 </div>
@@ -644,22 +536,14 @@ export function Inventory() {
           <div className="bg-white rounded-t-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[85vh]">
             <div className="p-5 border-b border-[#c3c6d7] shrink-0">
               <h2 className="text-lg font-bold text-[#131b2e]">
-                {modalData.action === "add" ? "Add Stock"
-                  : modalData.action === "remove" ? "Remove Stock"
-                  : modalData.action === "costPrice" ? "Update Cost Price"
-                  : modalData.action === "unitSize" ? "Update Container Size"
-                  : modalData.action === "reorderThreshold" ? "Update Reorder Threshold"
-                  : "Update Selling Price"}
+                {modalData.action === "unitSize" ? "Update Container Size" : "Update Reorder Threshold"}
               </h2>
               <p className="text-[#434655] text-sm mt-0.5">{modalData.productName}</p>
             </div>
             <div className="p-5 overflow-y-auto flex-1">
               <label htmlFor="amount-input" className="block mb-2 text-sm font-semibold text-[#131b2e]">
-                {modalData.action === "pricePerLiter" ? `New selling price per ${modalData.unit.toLowerCase()} (₹):`
-                  : modalData.action === "costPrice" ? `New cost price per ${modalData.unit.toLowerCase()} (₹):`
-                  : modalData.action === "unitSize" ? "Container size in litres:"
-                  : modalData.action === "reorderThreshold" ? `Reorder when stock falls below (${modalData.unit.toLowerCase()}):`
-                  : `Enter amount (${modalData.unit.toLowerCase()}):`}
+                {modalData.action === "unitSize" ? "Container size in litres:"
+                  : `Reorder when stock falls below (${modalData.unit.toLowerCase()}):`}
               </label>
               <input
                 id="amount-input"
@@ -668,9 +552,14 @@ export function Inventory() {
                 value={inputAmount}
                 onChange={(e) => setInputAmount(e.target.value)}
                 className="w-full px-5 py-4 text-2xl rounded-xl border-2 border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-                placeholder={modalData.action === "pricePerLiter" || modalData.action === "costPrice" ? "0.00" : "0"}
+                placeholder="0"
                 autoFocus
               />
+              {modalData.action === "unitSize" && (
+                <p className="mt-3 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                  Changing the container size will affect litres calculations in the dashboard for all historical orders of this product.
+                </p>
+              )}
             </div>
             <div className="p-4 flex gap-3 border-t border-[#c3c6d7] shrink-0">
               <button onClick={closeModal} disabled={confirming} className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-3 font-semibold transition-colors active:scale-95 disabled:opacity-50">
@@ -690,87 +579,12 @@ export function Inventory() {
         </div>
       )}
 
-      {/* Price Update Confirmation Modal */}
+      {/* Price Update Confirmation Modal — DISABLED: prices now live on batches */}
+      {/* TODO: re-enable once AI price feature is updated to work with batch prices
       {showPriceModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-6 z-[60] overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl my-6">
-            <div className="p-6 border-b border-[#c3c6d7]">
-              <h2 className="text-lg font-bold text-[#131b2e]">Price Changes Detected</h2>
-              <p className="text-sm text-[#434655] mt-1">Review before applying</p>
-            </div>
-            <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
-              {priceChanges.map((change, idx) => {
-                if (change.isNew) {
-                  return (
-                    <div key={`new-${idx}`} className="rounded-xl p-4 border border-orange-200 bg-orange-50">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold text-[#131b2e] truncate">{change.extractedName}</p>
-                            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-lg whitespace-nowrap">Not in inventory</span>
-                          </div>
-                          <p className="text-xs text-[#434655] mt-0.5">Found in image — not matched</p>
-                        </div>
-                        <span className="text-[#131b2e] font-semibold shrink-0">₹{change.newPrice}</span>
-                      </div>
-                    </div>
-                  );
-                }
-                const diff = change.newPrice - change.currentPrice;
-                const pct = change.currentPrice > 0 ? ((diff / change.currentPrice) * 100).toFixed(1) : "—";
-                const unchanged = diff === 0;
-                return (
-                  <div key={change.productId} className={`rounded-xl p-4 border ${unchanged ? "border-[#c3c6d7] bg-[#f2f3ff]" : diff > 0 ? "border-red-200 bg-red-50" : "border-blue-200 bg-blue-50"}`}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-[#131b2e] truncate">{change.productName}</p>
-                        <p className="text-xs text-[#434655] mt-0.5">Found as: "{change.extractedName}"</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="flex items-center gap-2 justify-end">
-                          <span className="text-[#434655] line-through text-sm">₹{change.currentPrice}</span>
-                          <span className="text-[#131b2e] font-bold">₹{change.newPrice}</span>
-                        </div>
-                        {!unchanged && (
-                          <div className={`flex items-center gap-1 justify-end text-xs mt-1 ${diff > 0 ? "text-[#ba1a1a]" : "text-[#004ac6]"}`}>
-                            {diff > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                            <span>{diff > 0 ? "+" : ""}{diff.toFixed(2)} ({pct}%)</span>
-                          </div>
-                        )}
-                        {unchanged && (
-                          <div className="flex items-center gap-1 justify-end text-xs mt-1 text-[#434655]">
-                            <MinusIcon className="h-3 w-3" /> No change
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="px-5 py-3 border-t border-[#c3c6d7] text-xs text-[#434655]">
-              {priceChanges.filter((c) => !c.isNew && c.newPrice !== c.currentPrice).length} of {priceChanges.filter((c) => !c.isNew).length} inventory prices will change
-              {priceChanges.filter((c) => c.isNew).length > 0 && (
-                <span className="ml-2 text-orange-700">· {priceChanges.filter((c) => c.isNew).length} not in inventory</span>
-              )}
-            </div>
-            <div className="p-4 flex gap-3">
-              <button onClick={() => { setShowPriceModal(false); setPriceChanges([]); }} disabled={applyingPrices} className="flex-1 bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] rounded-xl py-4 font-semibold transition-colors active:scale-95 disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={handleApplyPrices} disabled={applyingPrices || priceChanges.every((c) => c.isNew || c.newPrice === c.currentPrice)} className="flex-1 bg-[#004ac6] hover:bg-[#003ea8] text-white rounded-xl py-4 font-semibold flex items-center justify-center gap-2 transition-colors active:scale-95 disabled:opacity-60">
-                {applyingPrices && (
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
-                  </svg>
-                )}
-                {applyingPrices ? "Applying…" : "Apply Changes"}
-              </button>
-            </div>
-          </div>
-        </div>
+        ... modal JSX preserved in git history ...
       )}
+      */}
 
       {/* Restock Modal */}
       {showRestockSheet && (

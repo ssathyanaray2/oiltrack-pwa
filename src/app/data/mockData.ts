@@ -140,6 +140,64 @@ export const orders: Order[] = [
   },
 ];
 
+export interface ProductBatch {
+  id: string;
+  productId: string;
+  batchNumber: string;
+  numberOfBottles: number;
+  bottleSizeLitres: number;
+  unitPrice: number;
+  costPrice: number;
+  quantityLitres: number;
+  manufactureDate: string | null;
+  expiryDate: string | null;
+  notes?: string;
+  createdAt?: string;
+}
+
+export const batches: ProductBatch[] = [
+  {
+    id: "b1",
+    productId: "1",
+    batchNumber: "BATCH-20260310-001",
+    numberOfBottles: 30,
+    bottleSizeLitres: 15,
+    unitPrice: 3.50,
+    costPrice: 2.80,
+    quantityLitres: 450,
+    manufactureDate: "2026-03-01",
+    expiryDate: "2026-09-01",
+    createdAt: "2026-03-10T10:00:00Z",
+  },
+  {
+    id: "b2",
+    productId: "1",
+    batchNumber: "BATCH-20260325-001",
+    numberOfBottles: 20,
+    bottleSizeLitres: 15,
+    unitPrice: 3.60,
+    costPrice: 2.90,
+    quantityLitres: 300,
+    manufactureDate: "2026-03-20",
+    expiryDate: "2026-05-01",
+    notes: "Near expiry — use first",
+    createdAt: "2026-03-25T10:00:00Z",
+  },
+  {
+    id: "b3",
+    productId: "2",
+    batchNumber: "BATCH-20260301-001",
+    numberOfBottles: 12,
+    bottleSizeLitres: 15,
+    unitPrice: 8.00,
+    costPrice: 6.50,
+    quantityLitres: 180,
+    manufactureDate: "2026-02-15",
+    expiryDate: "2026-08-15",
+    createdAt: "2026-03-01T10:00:00Z",
+  },
+];
+
 export const monthlySales: SalesData[] = [
   { month: "Jan", sales: 42000 },
   { month: "Feb", sales: 38500 },

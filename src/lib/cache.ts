@@ -3,9 +3,10 @@ const CACHE_KEYS = {
   customers: "supabase_cache_customers",
   orders: "supabase_cache_orders",
   dashboard: "supabase_cache_dashboard",
+  batches: "supabase_cache_batches",
 } as const;
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const CACHE_PREFIX = "v";
 
 function versionedKey(key: string) {
@@ -77,5 +78,30 @@ export function setCachedDashboard(data: { monthlySales: unknown[]; inventoryLev
     localStorage.setItem(versionedKey(CACHE_KEYS.dashboard), JSON.stringify(data));
   } catch (e) {
     console.warn("Failed to cache dashboard", e);
+  }
+}
+
+export function getCachedBatches(productId: string): unknown[] | null {
+  try {
+    const raw = localStorage.getItem(versionedKey(`${CACHE_KEYS.batches}_${productId}`));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedBatches(productId: string, data: unknown[]): void {
+  try {
+    localStorage.setItem(versionedKey(`${CACHE_KEYS.batches}_${productId}`), JSON.stringify(data));
+  } catch (e) {
+    console.warn("Failed to cache batches", e);
+  }
+}
+
+export function invalidateCachedBatches(productId: string): void {
+  try {
+    localStorage.removeItem(versionedKey(`${CACHE_KEYS.batches}_${productId}`));
+  } catch {
+    // ignore
   }
 }

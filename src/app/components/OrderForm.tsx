@@ -12,19 +12,21 @@ import {
   getOrders,
   getProducts,
   getCustomers,
+  getBatchesForProduct,
   createOrder,
   updateOrder,
   deleteOrder,
 } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { getCachedOrders, getCachedProducts, getCachedCustomers, setCachedOrders, setCachedProducts, setCachedCustomers } from "../../lib/cache";
+import { getCachedOrders, getCachedProducts, getCachedCustomers, getCachedBatches, setCachedOrders, setCachedProducts, setCachedCustomers } from "../../lib/cache";
 import { parseOrderText, type ParsedOrderItem } from "../../lib/orderParser";
-import type { Order, Product, Customer } from "../../lib/types";
+import type { Order, Product, Customer, ProductBatch } from "../../lib/types";
 import { orders as mockOrders, products as mockProducts, customers as mockCustomers } from "../data/mockData";
 
 interface OrderItemRow {
   productId: string;
   quantity: string;
+  batchId?: string;
 }
 
 export function OrderForm() {
@@ -51,6 +53,26 @@ export function OrderForm() {
 
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([{ productId: "", quantity: "" }]);
   const [saving, setSaving] = useState(false);
+
+  // Batch data per product — keyed by productId, sorted FIFO (oldest first)
+  const [productBatches, setProductBatches] = useState<Record<string, ProductBatch[]>>({});
+
+  const loadBatchesForProduct = async (productId: string): Promise<ProductBatch[]> => {
+    if (!productId) return [];
+    if (productBatches[productId]) return productBatches[productId];
+    let batches: ProductBatch[] = [];
+    if (isSupabaseConfigured() && isOnline) {
+      try {
+        batches = await getBatchesForProduct(productId);
+      } catch {
+        batches = (getCachedBatches(productId) as ProductBatch[] | null) ?? [];
+      }
+    } else {
+      batches = (getCachedBatches(productId) as ProductBatch[] | null) ?? [];
+    }
+    setProductBatches((prev) => ({ ...prev, [productId]: batches }));
+    return batches;
+  };
 
   // AI order parser modal
   const [showAIModal, setShowAIModal] = useState(false);
@@ -83,7 +105,7 @@ export function OrderForm() {
                 notes: order.notes ?? "",
               });
               const items = order.items && order.items.length > 0
-                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString() }))
+                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString(), batchId: i.batchId }))
                 : [{ productId: order.productId, quantity: order.quantity.toString() }];
               setOrderItems(items);
             }
@@ -109,7 +131,7 @@ export function OrderForm() {
                 notes: order.notes ?? "",
               });
               const items = order.items && order.items.length > 0
-                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString() }))
+                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString(), batchId: i.batchId }))
                 : [{ productId: order.productId, quantity: order.quantity.toString() }];
               setOrderItems(items);
             }
@@ -153,6 +175,15 @@ export function OrderForm() {
     }
   }, [isOnline]);
 
+  // Auto-load batches for any product in the current order items
+  const productIdKey = orderItems.map((i) => i.productId).join(",");
+  useEffect(() => {
+    const productIds = [...new Set(orderItems.map((i) => i.productId).filter(Boolean))];
+    productIds.forEach((pid) => {
+      if (!productBatches[pid]) loadBatchesForProduct(pid);
+    });
+  }, [productIdKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleCustomerChange = (customerId: string) => {
     const customer = customers.find((c) => c.id === customerId);
     setFormData({ ...formData, customerId, customerName: customer?.name ?? "" });
@@ -171,11 +202,28 @@ export function OrderForm() {
     setOrderItems(orderItems.map((item, i) => i === index ? { ...item, [field]: value } : item));
   };
 
+  const handleProductSelect = async (index: number, productId: string) => {
+    // Immediately update productId so UI responds
+    setOrderItems((prev) => prev.map((item, i) => i === index ? { ...item, productId, batchId: "" } : item));
+    if (!productId) return;
+    const batches = await loadBatchesForProduct(productId);
+    if (batches.length > 0) {
+      setOrderItems((prev) => prev.map((item, i) =>
+        i === index && item.productId === productId ? { ...item, batchId: batches[0].id } : item
+      ));
+    }
+  };
+
+  const getItemBatch = (item: OrderItemRow): ProductBatch | undefined => {
+    const batches = productBatches[item.productId] ?? [];
+    return batches.find((b) => b.id === item.batchId) ?? batches[0];
+  };
+
   const getOrderTotal = () => {
     return orderItems.reduce((sum, item) => {
-      const product = products.find((p) => p.id === item.productId);
+      const batch = getItemBatch(item);
       const qty = parseInt(item.quantity || "0", 10);
-      return sum + (product?.pricePerLiter ?? 0) * qty;
+      return sum + (batch?.unitPrice ?? 0) * qty;
     }, 0);
   };
 
@@ -257,9 +305,10 @@ export function OrderForm() {
     });
     const itemLines = orderItems.map((item) => {
       const product = products.find((p) => p.id === item.productId);
+      const batch = getItemBatch(item);
       const qty = parseInt(item.quantity || "0", 10);
-      const subtotal = (product?.pricePerLiter ?? 0) * qty;
-      return `• ${product?.name ?? "Unknown"} — ${qty} L @ ₹${product?.pricePerLiter}/L = ₹${subtotal.toLocaleString("en-IN")}`;
+      const subtotal = (batch?.unitPrice ?? 0) * qty;
+      return `• ${product?.name ?? "Unknown"} (${product?.unitSize}L/bottle) — ${qty} bottles @ ₹${batch?.unitPrice ?? 0}/bottle = ₹${subtotal.toLocaleString("en-IN")}`;
     }).join("\n");
     const total = getOrderTotal().toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
@@ -311,6 +360,7 @@ export function OrderForm() {
       const parsedItems = orderItems.map((item) => ({
         productId: item.productId,
         quantity: parseInt(item.quantity, 10),
+        batchId: item.batchId || undefined,
       }));
 
       if (!isOnline && !isEditing) {
@@ -343,7 +393,7 @@ export function OrderForm() {
           return;
         }
         if (product.stock < item.quantity) {
-          toast.error(`Insufficient stock for ${product.name} (available: ${product.stock} L)`);
+          toast.error(`Insufficient stock for ${product.name} (available: ${product.stock} bottles)`);
           return;
         }
       }
@@ -648,8 +698,10 @@ export function OrderForm() {
           <div className="space-y-3">
             {orderItems.map((item, index) => {
               const selectedProduct = products.find((p) => p.id === item.productId);
+              const batchesForProduct = productBatches[item.productId] ?? [];
+              const selectedBatch = batchesForProduct.find((b) => b.id === item.batchId) ?? batchesForProduct[0];
               const qty = parseInt(item.quantity || "0", 10);
-              const subtotal = (selectedProduct?.pricePerLiter ?? 0) * qty;
+              const subtotal = (selectedBatch?.unitPrice ?? 0) * qty;
 
               return (
                 <div
@@ -675,7 +727,7 @@ export function OrderForm() {
                   <div className="space-y-3">
                     <select
                       value={item.productId}
-                      onChange={(e) => updateItem(index, "productId", e.target.value)}
+                      onChange={(e) => handleProductSelect(index, e.target.value)}
                       disabled={isLocked}
                       className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       required
@@ -683,22 +735,41 @@ export function OrderForm() {
                       <option value="">Select oil type</option>
                       {products.map((product) => (
                         <option key={product.id} value={product.id}>
-                          {product.name} — ₹{product.pricePerLiter.toFixed(2)}/L
+                          {product.name} · {product.unitSize}L/bottle ({product.stock} bottles)
                         </option>
                       ))}
                     </select>
 
+                    {item.productId && batchesForProduct.length > 0 && (
+                      <select
+                        value={item.batchId ?? ""}
+                        onChange={(e) => updateItem(index, "batchId", e.target.value)}
+                        disabled={isLocked}
+                        className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {batchesForProduct.map((batch) => (
+                          <option key={batch.id} value={batch.id}>
+                            {batch.batchNumber} — ₹{batch.unitPrice}/bottle ({batch.numberOfBottles} bottles left)
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {item.productId && batchesForProduct.length === 0 && (
+                      <p className="text-xs text-amber-600 px-1">No batches available — add stock via Inventory</p>
+                    )}
+
                     <input
                       type="number"
                       min="1"
+                      step="1"
                       value={item.quantity}
                       onChange={(e) => updateItem(index, "quantity", e.target.value)}
-                      placeholder="Quantity (L)"
+                      placeholder="Number of bottles"
                       disabled={isLocked}
                       className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm placeholder:text-[#737686] disabled:opacity-50 disabled:cursor-not-allowed"
                       required
                     />
-                    {item.productId && item.quantity && (
+                    {item.productId && item.quantity && selectedBatch && (
                       <div className="flex items-center justify-between px-1">
                         <p className="text-xs text-[#737686]">Subtotal</p>
                         <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
@@ -707,7 +778,7 @@ export function OrderForm() {
 
                     {selectedProduct && (
                       <p className="text-xs text-[#737686]">
-                        Stock available: {selectedProduct.stock} L
+                        Stock available: {selectedProduct.stock} bottles
                       </p>
                     )}
                   </div>
@@ -936,7 +1007,6 @@ export function OrderForm() {
                   {aiParsed.map((item, i) => {
                     const product = products.find((p) => p.id === item.productId);
                     const unitSize = product?.unitSize ?? 1;
-                    const subtotal = (product?.pricePerLiter ?? 0) * item.quantity;
                     const containers = unitSize > 1 ? Math.ceil(item.quantity / unitSize) : null;
                     return (
                       <div key={i} className="rounded-xl border border-[#c3c6d7] bg-[#f2f3ff] p-4 flex items-center justify-between gap-3">
@@ -952,20 +1022,14 @@ export function OrderForm() {
                           </p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
-                          <p className="text-xs text-[#737686]">₹{product?.pricePerLiter}/L</p>
+                          <p className="text-xs text-[#737686]">Price set per batch</p>
                         </div>
                       </div>
                     );
                   })}
                   <div className="pt-2 border-t border-[#c3c6d7] flex items-center justify-between gap-3">
                     <span className="font-semibold text-[#131b2e] text-sm">Total</span>
-                    <span className="font-bold text-[#004ac6] flex-shrink-0">
-                      ₹{aiParsed.reduce((sum, item) => {
-                        const product = products.find((p) => p.id === item.productId);
-                        return sum + (product?.pricePerLiter ?? 0) * item.quantity;
-                      }, 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                    </span>
+                    <span className="text-xs text-[#737686]">Calculated after batch selection</span>
                   </div>
                 </div>
                 <div className="p-4 flex gap-3 border-t border-[#c3c6d7] shrink-0">
