@@ -4,6 +4,8 @@
  * No quota limits needed — IndexedDB uses up to 50-60% of available disk.
  */
 
+import type { Order } from "./types";
+
 const DB_NAME = "oiltrack-db";
 const DB_VERSION = 1;
 
@@ -12,8 +14,8 @@ export interface OfflineOrder {
   customerId: string;
   customerName: string;
   date: string;
-  status: "Pending" | "Delivered" | "Cancelled";
-  paymentStatus: "Paid" | "Unpaid";
+  status: Order["status"];
+  paymentStatus: Order["paymentStatus"];
   notes: string;
   items: Array<{ productId: string; quantity: string }>;
   createdAt: string;

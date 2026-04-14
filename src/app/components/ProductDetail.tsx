@@ -11,7 +11,6 @@ import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, getCachedBatches, setCachedBatches } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Product, ProductBatch } from "../../lib/types";
-import { products as mockProducts, batches as mockBatches } from "../data/mockData";
 import {
   ArrowLeft,
   Package,
@@ -102,14 +101,14 @@ export function ProductDetail() {
         console.error(e);
         const cp = getCachedProducts() as Product[] | null;
         const cb = getCachedBatches(id) as ProductBatch[] | null;
-        setProduct((cp ?? mockProducts).find((p) => p.id === id) ?? null);
-        setBatches(cb ?? mockBatches.filter((b) => b.productId === id));
+        setProduct((cp ?? []).find((p) => p.id === id) ?? null);
+        setBatches(cb ?? []);
       }
     } else {
       const cp = getCachedProducts() as Product[] | null;
       const cb = getCachedBatches(id) as ProductBatch[] | null;
-      setProduct((cp ?? mockProducts).find((p) => p.id === id) ?? null);
-      setBatches(cb ?? mockBatches.filter((b) => b.productId === id));
+      setProduct((cp ?? []).find((p) => p.id === id) ?? null);
+      setBatches(cb ?? []);
     }
     if (!silent) setLoading(false);
   };

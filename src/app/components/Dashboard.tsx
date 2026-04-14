@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
-import { monthlySales as mockMonthlySales, inventoryLevels as mockInventoryLevels } from "../data/mockData";
-import { getProducts, getOrders } from "../../lib/api";
+import { getProducts, getOrdersSince, getCustomerLastOrders } from "../../lib/api";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, getCachedOrders, getCachedDashboard, setCachedProducts, setCachedOrders, setCachedDashboard } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
@@ -70,14 +69,17 @@ function buildProductVolume(orders: Order[], products: Product[], year: number):
     .sort((a, b) => b.value - a.value);
 }
 
-function getLostCustomers(orders: Order[], months: number = 6): { customerId: string; customerName: string; lastOrderDate: Date; monthsAgo: number }[] {
+function getLostCustomers(
+  allOrders: { customerId: string; customerName: string; date: string; status: string }[],
+  months: number = 6
+): { customerId: string; customerName: string; lastOrderDate: Date; monthsAgo: number }[] {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - months);
   const lastOrder = new Map<string, { date: Date; customerName: string }>();
-  orders.forEach((order) => {
-    if (order.status === "Cancelled" || !order.customerId) return;
+  allOrders.forEach((order) => {
+    if (order.status === "Cancelled") return;
     const existing = lastOrder.get(order.customerId);
-    const d = new Date(order.date);
+    const d = new Date(order.date + "T00:00:00");
     if (!existing || d > existing.date) {
       lastOrder.set(order.customerId, { date: d, customerName: order.customerName });
     }
@@ -110,6 +112,7 @@ export function Dashboard() {
   const [showChartDropdown, setShowChartDropdown] = useState(false);
   const [showInactiveCustomers, setShowInactiveCustomers] = useState(false);
   const [inactiveMonths, setInactiveMonths] = useState(6);
+  const [customerLastOrders, setCustomerLastOrders] = useState<{ customerId: string; customerName: string; date: string; status: string }[]>([]);
   const [chartYear, setChartYear] = useState(new Date().getFullYear());
   const [pieYear, setPieYear] = useState(new Date().getFullYear());
   const availableYears = useMemo(() => {
@@ -161,7 +164,7 @@ export function Dashboard() {
     }
   };
 
-  const [monthlySales, setMonthlySales] = useState<{ month: string; sales: number }[]>(mockMonthlySales);
+  const [monthlySales, setMonthlySales] = useState<{ month: string; sales: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -169,14 +172,20 @@ export function Dashboard() {
       const useSupabase = isSupabaseConfigured() && isOnline;
       if (useSupabase) {
         try {
-          const [productsData, ordersData] = await Promise.all([getProducts(), getOrders()]);
+          const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+          const [productsData, ordersData, lastOrdersData] = await Promise.all([
+            getProducts(),
+            getOrdersSince(startOfYear),
+            getCustomerLastOrders(),
+          ]);
           setProducts(productsData);
           setOrders(ordersData);
+          setCustomerLastOrders(lastOrdersData);
           const sales = buildMonthlyData(ordersData, productsData, "sales", new Date().getFullYear()).map((d) => ({ month: d.month, sales: d.value }));
-          setMonthlySales(sales.length ? sales : mockMonthlySales);
+          setMonthlySales(sales);
           setCachedProducts(productsData);
           setCachedOrders(ordersData);
-          setCachedDashboard({ monthlySales: sales, inventoryLevels: mockInventoryLevels });
+          setCachedDashboard({ monthlySales: sales, inventoryLevels: [] });
         } catch (e) {
           console.error(e);
           const cachedProducts = getCachedProducts() as Product[] | null;
@@ -197,7 +206,7 @@ export function Dashboard() {
         setMonthlySales(
           cachedDash?.monthlySales?.length
             ? (cachedDash.monthlySales as { month: string; sales: number }[])
-            : mockMonthlySales
+            : []
         );
         setLoading(false);
       }
@@ -250,15 +259,13 @@ export function Dashboard() {
   });
 
   const monthlyLiters = monthlyOrders.reduce((sum, order) => {
-    const items = order.items?.length
-      ? order.items
-      : [{ productId: order.productId, quantity: order.quantity }];
+    const items = order.items ?? [];
     return sum + items.reduce((s, item) => {
       const product = products.find((p) => p.id === item.productId);
-      return s + item.quantity * (product?.unitSize ?? 1);
+      if (!product) return s;
+      return s + item.quantity * product.unitSize;
     }, 0);
   }, 0);
-
 
   const recentOrders = [...orders].sort((a, b) => {
     const dateA = new Date(a.date).getTime();
@@ -271,7 +278,7 @@ export function Dashboard() {
 
   const chartData = buildMonthlyData(orders, products, chartMode, chartYear);
   const productVolume = buildProductVolume(orders, products, pieYear);
-  const lostCustomers = getLostCustomers(orders, inactiveMonths);
+  const lostCustomers = getLostCustomers(customerLastOrders, inactiveMonths);
 
   const chartLabels: Record<ChartMode, string> = {
     sales: "Monthly Sales",

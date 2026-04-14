@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router";
-import { getCustomer, getOrders, getProducts, getBatchesForProduct } from "../../lib/api";
+import { getCustomer, getOrdersByCustomer, getProducts, getBatchesForProduct } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedCustomers, getCachedOrders, getCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Customer, Order, Product, ProductBatch } from "../../lib/types";
-import { customers as mockCustomers, orders as mockOrders, products as mockProducts } from "../data/mockData";
 import { ArrowLeft, User, Phone, MapPin, Mail, Calendar, Package as PackageIcon, Pencil, ContactRound, IndianRupee } from "lucide-react";
 import React from "react";
 import { formatPhoneLink, formatMapsLink } from "../../lib/utils";
@@ -20,6 +19,7 @@ export function CustomerDetail() {
   const [products, setProducts] = useState<Product[]>([]);
   const [batchesByProduct, setBatchesByProduct] = useState<Record<string, ProductBatch[]>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingPrices, setLoadingPrices] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -32,24 +32,20 @@ export function CustomerDetail() {
         try {
           const [customerData, ordersData, productsData] = await Promise.all([
             getCustomer(id),
-            getOrders(),
+            getOrdersByCustomer(id),
             getProducts(),
           ]);
           setCustomer(customerData ?? null);
           setOrders(ordersData);
           setProducts(productsData);
-          const batchResults = await Promise.all(
-            productsData.map((p) => getBatchesForProduct(p.id).then((b) => ({ id: p.id, batches: b })))
-          );
-          setBatchesByProduct(Object.fromEntries(batchResults.map(({ id, batches }) => [id, batches])));
         } catch (e) {
           console.error(e);
           const cc = getCachedCustomers() as Customer[] | null;
           const co = getCachedOrders() as Order[] | null;
           const cp = getCachedProducts() as Product[] | null;
-          setCustomer((cc ?? mockCustomers).find((c) => c.id === id) ?? null);
-          setOrders(co ?? mockOrders);
-          setProducts(cp ?? mockProducts);
+          setCustomer((cc ?? []).find((c) => c.id === id) ?? null);
+          setOrders(co ?? []);
+          setProducts(cp ?? []);
         } finally {
           setLoading(false);
         }
@@ -57,18 +53,16 @@ export function CustomerDetail() {
         const cc = getCachedCustomers() as Customer[] | null;
         const co = getCachedOrders() as Order[] | null;
         const cp = getCachedProducts() as Product[] | null;
-        setCustomer((cc ?? mockCustomers).find((c) => c.id === id) ?? null);
-        setOrders(co ?? mockOrders);
-        setProducts(cp ?? mockProducts);
+        setCustomer((cc ?? []).find((c) => c.id === id) ?? null);
+        setOrders(co ?? []);
+        setProducts(cp ?? []);
         setLoading(false);
       }
     };
     load();
   }, [id, isOnline]);
 
-  const customerOrders = orders
-    .filter((o) => o.customerId === id)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const customerOrders = orders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const getProductName = (productId: string) =>
     products.find((p) => p.id === productId)?.name ?? "Unknown Product";
@@ -110,12 +104,28 @@ export function CustomerDetail() {
       .join("")
       .toUpperCase();
 
-  const sharePrices = () => {
+  const sharePrices = async () => {
     if (!products.length) return;
+    let batches = batchesByProduct;
+    if (!Object.keys(batches).length) {
+      setLoadingPrices(true);
+      try {
+        const results = await Promise.all(
+          products.map((p) => getBatchesForProduct(p.id).then((b) => ({ id: p.id, batches: b })))
+        );
+        batches = Object.fromEntries(results.map(({ id, batches }) => [id, batches]));
+        setBatchesByProduct(batches);
+      } catch (e) {
+        console.error(e);
+        return;
+      } finally {
+        setLoadingPrices(false);
+      }
+    }
     const lines = products.map((p) => {
-      const batches = batchesByProduct[p.id] ?? [];
-      const oldest = batches
-        .filter((b) => b.numberOfBottles > 0)
+      const productBatches = batches[p.id] ?? [];
+      const oldest = productBatches
+        .filter((b) => b.unitPrice)
         .sort((a, b) => {
           if (!a.manufactureDate && !b.manufactureDate) return 0;
           if (!a.manufactureDate) return 1;
@@ -215,7 +225,8 @@ export function CustomerDetail() {
         <div className="relative group flex-shrink-0">
           <button
             onClick={sharePrices}
-            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] transition-colors active:scale-95"
+            disabled={loadingPrices}
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] hover:bg-[#eaedff] text-[#434655] transition-colors active:scale-95 disabled:opacity-50"
           >
             <IndianRupee className="h-4 w-4" />
           </button>

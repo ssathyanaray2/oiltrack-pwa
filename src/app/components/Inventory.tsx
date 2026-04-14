@@ -11,7 +11,6 @@ import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 // import { extractPricesFromImage, type PriceChange } from "../../lib/priceAnalysis"; // DISABLED: AI price feature paused until batch-price UX is designed
 import type { Product } from "../../lib/types";
-import { products as mockProducts } from "../data/mockData";
 import React from "react";
 
 type FilterOption = "all" | "low" | "in" | "out";
@@ -106,13 +105,13 @@ export function Inventory() {
         } catch (e) {
           console.error(e);
           const cached = getCachedProducts() as Product[] | null;
-          setProducts(cached?.length ? cached : mockProducts);
+          setProducts(cached ?? []);
         } finally {
           setLoading(false);
         }
       } else {
         const cached = getCachedProducts() as Product[] | null;
-        setProducts(cached?.length ? cached : mockProducts);
+        setProducts(cached ?? []);
         setLoading(false);
       }
     };

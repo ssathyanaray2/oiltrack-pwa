@@ -14,9 +14,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       // Use the existing public/manifest.json
       manifest: false,
+      devOptions: { enabled: false },
       workbox: {
         // Precache all static assets so the app shell loads offline
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        navigateFallback: 'index.html',
         runtimeCaching: [
           {
             // Supabase REST API — NetworkFirst with 5s timeout then cache fallback

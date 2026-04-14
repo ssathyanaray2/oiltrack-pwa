@@ -8,7 +8,6 @@ import { getCachedCustomers, setCachedCustomers } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineCustomersDB } from "../../lib/db";
 import type { Customer } from "../../lib/types";
-import { customers as mockCustomers } from "../data/mockData";
 
 interface ContactsManager {
   select(properties: string[], options?: { multiple?: boolean }): Promise<Array<{
@@ -78,8 +77,8 @@ export function CustomerForm() {
           if (customer) {
             setFormData({
               name: customer.name,
-              phone: customer.phone,
-              address: customer.address,
+              phone: customer.phone ?? "",
+              address: customer.address ?? "",
               email: customer.email ?? "",
               maps_link: customer.maps_link ?? "",
             });
@@ -91,8 +90,8 @@ export function CustomerForm() {
           if (customer) {
             setFormData({
               name: customer.name,
-              phone: customer.phone,
-              address: customer.address,
+              phone: customer.phone ?? "",
+              address: customer.address ?? "",
               email: customer.email ?? "",
               maps_link: customer.maps_link ?? "",
             });
@@ -102,12 +101,12 @@ export function CustomerForm() {
         }
       } else {
         const cached = getCachedCustomers() as Customer[] | null;
-        const customer = (cached ?? mockCustomers).find((c) => c.id === id);
+        const customer = (cached ?? []).find((c) => c.id === id);
         if (customer) {
           setFormData({
             name: customer.name,
             phone: customer.phone,
-            address: customer.address,
+            address: customer.address ?? "",
             email: customer.email ?? "",
             maps_link: customer.maps_link ?? "",
           });

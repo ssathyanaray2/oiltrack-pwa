@@ -2,14 +2,13 @@ import { useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
-import { getCustomers, getOrders } from "../../lib/api";
+import { getCustomers, getOrderCountsByCustomer } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { getCachedCustomers, getCachedOrders, setCachedCustomers, setCachedOrders } from "../../lib/cache";
+import { getCachedCustomers, setCachedCustomers } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineCustomersDB, type OfflineCustomer } from "../../lib/db";
 import { SYNC_COMPLETE_EVENT } from "../hooks/useOfflineSync";
-import type { Customer, Order } from "../../lib/types";
-import { customers as mockCustomers, orders as mockOrders } from "../data/mockData";
+import type { Customer } from "../../lib/types";
 import { deleteCustomer } from "../../lib/api";
 import { toast } from "sonner";
 import { User, Phone, MapPin, Mail, Plus, ShoppingBag, Clock, Trash2, Search } from "lucide-react";
@@ -19,7 +18,7 @@ import { formatMapsLink } from "../../lib/utils";
 export function Customers() {
   const isOnline = useOnlineStatus();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orderCounts, setOrderCounts] = useState<Record<string, { total: number; pending: number }>>({});
   const [pendingCustomers, setPendingCustomers] = useState<OfflineCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -38,35 +37,28 @@ export function Customers() {
       const useSupabase = isSupabaseConfigured() && isOnline;
       if (useSupabase) {
         try {
-          const [customersData, ordersData] = await Promise.all([getCustomers(), getOrders()]);
+          const [customersData, countsData] = await Promise.all([getCustomers(), getOrderCountsByCustomer()]);
           setCustomers(customersData);
-          setOrders(ordersData);
+          setOrderCounts(countsData);
           setCachedCustomers(customersData);
-          setCachedOrders(ordersData);
         } catch (e) {
           console.error(e);
           const cc = getCachedCustomers() as Customer[] | null;
-          const co = getCachedOrders() as Order[] | null;
-          setCustomers(cc?.length ? cc : mockCustomers);
-          setOrders(co?.length ? co : mockOrders);
+          setCustomers(cc ?? []);
         } finally {
           setLoading(false);
         }
       } else {
         const cc = getCachedCustomers() as Customer[] | null;
-        const co = getCachedOrders() as Order[] | null;
-        setCustomers(cc?.length ? cc : mockCustomers);
-        setOrders(co?.length ? co : mockOrders);
+        setCustomers(cc ?? []);
         setLoading(false);
       }
     };
     load();
   }, [isOnline]);
 
-  const getCustomerOrderCount = (customerId: string) =>
-    orders.filter((o) => o.customerId === customerId).length;
-  const getCustomerPendingOrders = (customerId: string) =>
-    orders.filter((o) => o.customerId === customerId && o.status === "Pending").length;
+  const getCustomerOrderCount = (customerId: string) => orderCounts[customerId]?.total ?? 0;
+  const getCustomerPendingOrders = (customerId: string) => orderCounts[customerId]?.pending ?? 0;
 
   const getMapsUrl = (customer: Customer): string | null => {
     if (customer.maps_link?.trim()) return customer.maps_link.trim();

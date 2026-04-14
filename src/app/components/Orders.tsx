@@ -2,7 +2,7 @@ import React,{ useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
-import { getOrders, getProducts, updateOrder } from "../../lib/api";
+import { getOrders, getProducts, updateOrder, InsufficientStockError } from "../../lib/api";
 import { toast } from "sonner";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, setCachedOrders, setCachedProducts } from "../../lib/cache";
@@ -10,7 +10,6 @@ import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineOrdersDB, type OfflineOrder } from "../../lib/db";
 import { SYNC_COMPLETE_EVENT } from "../hooks/useOfflineSync";
 import type { Order, Product } from "../../lib/types";
-import { orders as mockOrders, products as mockProducts } from "../data/mockData";
 import { Plus, Calendar, User, Package as PackageIcon, LayoutGrid, List, ArrowUpDown, Search, IndianRupee, Clock, ChevronDown } from "lucide-react";
 
 type ViewMode = "card" | "list";
@@ -31,6 +30,7 @@ export function Orders() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
+  const [stockWarning, setStockWarning] = useState<{ productId: string; available: number; requested: number } | null>(null);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
   const toggleExpand = (orderId: string, e: React.MouseEvent) => {
@@ -62,12 +62,16 @@ export function Orders() {
       await updateOrder(orderId, { status: newStatus });
     } catch (err) {
       console.error(err);
-      toast.error("Failed to update status");
       setOrders((prev) => {
         const rolled = prev.map((o) => o.id === orderId ? { ...o, status: currentStatus } : o);
         setCachedOrders(rolled);
         return rolled;
       });
+      if (err instanceof InsufficientStockError) {
+        setStockWarning({ productId: err.productName, available: err.available, requested: err.requested });
+      } else {
+        toast.error("Failed to update status");
+      }
     } finally {
       setSavingOrderId(null);
     }
@@ -87,12 +91,16 @@ export function Orders() {
       await updateOrder(orderId, { status: newStatus });
     } catch (err) {
       console.error(err);
-      toast.error("Failed to update status");
       setOrders((prev) => {
-        const rolled = prev.map((o) => o.id === orderId ? { ...o, status: "Cancelled" } : o);
+        const rolled = prev.map((o) => o.id === orderId ? { ...o, status: "Cancelled" as const } : o);
         setCachedOrders(rolled);
         return rolled;
       });
+      if (err instanceof InsufficientStockError) {
+        setStockWarning({ productId: err.productName, available: err.available, requested: err.requested });
+      } else {
+        toast.error("Failed to update status");
+      }
     } finally {
       setSavingOrderId(null);
     }
@@ -165,16 +173,16 @@ export function Orders() {
           console.error(e);
           const co = getCachedOrders() as Order[] | null;
           const cp = getCachedProducts() as Product[] | null;
-          setOrders(co?.length ? co : mockOrders);
-          setProducts(cp?.length ? cp : mockProducts);
+          setOrders(co ?? []);
+          setProducts(cp ?? []);
         } finally {
           setLoading(false);
         }
       } else {
         const co = getCachedOrders() as Order[] | null;
         const cp = getCachedProducts() as Product[] | null;
-        setOrders(co?.length ? co : mockOrders);
-        setProducts(cp?.length ? cp : mockProducts);
+        setOrders(co ?? []);
+        setProducts(cp ?? []);
         setLoading(false);
       }
     };
@@ -184,6 +192,11 @@ export function Orders() {
   const getProductName = (productId: string) => {
     const product = products.find((p) => p.id === productId);
     return product?.name || "Unknown Product";
+  };
+
+  const getItemLitres = (productId: string, quantity: number) => {
+    const product = products.find((p) => p.id === productId);
+    return quantity * (product?.unitSize ?? 1);
   };
 
   const calculateOrderTotal = (order: Order) => {
@@ -349,7 +362,7 @@ export function Orders() {
                     <span className="text-sm font-medium text-[#131b2e] truncate">{order.customerName}</span>
                     <span className="text-xs text-orange-600 whitespace-nowrap">
                       {order.items.length === 1
-                        ? `${product?.name ?? "Unknown"} — ${firstItem?.quantity} L`
+                        ? `${product?.name ?? "Unknown"} — ${firstItem ? getItemLitres(firstItem.productId, firstItem.quantity) : 0}L`
                         : `${order.items.length} items`}
                       {" · "}{order.date}
                     </span>
@@ -473,7 +486,7 @@ export function Orders() {
                             <div className="mt-2 ml-6 space-y-1">
                               {order.items.map((item, i) => (
                                 <div key={i} className="text-xs text-[#434655]">
-                                  {getProductName(item.productId)} · {item.quantity} L
+                                  {getProductName(item.productId)} · {getItemLitres(item.productId, item.quantity)}L
                                 </div>
                               ))}
                             </div>
@@ -483,7 +496,7 @@ export function Orders() {
                         <div className="flex items-center gap-2">
                           <PackageIcon className="h-4 w-4 text-[#737686] flex-shrink-0" />
                           <span className="text-sm text-[#434655]">
-                            {getProductName(order.productId)} · {order.quantity} L
+                            {getProductName(order.productId)} · {getItemLitres(order.productId, order.quantity)}L
                           </span>
                         </div>
                       )}
@@ -609,7 +622,7 @@ export function Orders() {
                         </button>
                       ) : (
                         <span className="text-xs text-[#434655] truncate flex-1 min-w-0">
-                          {getProductName(order.productId)} ({order.quantity}L)
+                          {getProductName(order.productId)} ({getItemLitres(order.productId, order.quantity)}L)
                         </span>
                       )}
                       <div className="flex flex-col items-end flex-shrink-0 ml-2">
@@ -621,7 +634,7 @@ export function Orders() {
                       <div className="mt-1.5 ml-1 space-y-0.5">
                         {order.items.map((item, i) => (
                           <div key={i} className="text-xs text-[#434655]">
-                            {getProductName(item.productId)} · {item.quantity} L
+                            {getProductName(item.productId)} · {getItemLitres(item.productId, item.quantity)}L
                           </div>
                         ))}
                       </div>
@@ -642,6 +655,17 @@ export function Orders() {
         variant="primary"
         onConfirm={confirmReactivate}
         onCancel={() => setReactivateConfirm(null)}
+      />
+
+      <ConfirmModal
+        isOpen={!!stockWarning}
+        title="Insufficient Stock"
+        message={stockWarning ? `Only ${stockWarning.available} bottles available in the selected batch, but ${stockWarning.requested} were ordered. Status was not updated.` : ""}
+        confirmLabel="OK"
+        cancelLabel=""
+        variant="primary"
+        onConfirm={() => setStockWarning(null)}
+        onCancel={() => setStockWarning(null)}
       />
     </div>
   );

@@ -9,7 +9,6 @@ import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineOrdersDB } from "../../lib/db";
 import {
   getOrder,
-  getOrders,
   getProducts,
   getCustomers,
   getBatchesForProduct,
@@ -18,10 +17,9 @@ import {
   deleteOrder,
 } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { getCachedOrders, getCachedProducts, getCachedCustomers, getCachedBatches, setCachedOrders, setCachedProducts, setCachedCustomers } from "../../lib/cache";
+import { getCachedOrders, getCachedProducts, getCachedCustomers, getCachedBatches, setCachedProducts, setCachedCustomers } from "../../lib/cache";
 import { parseOrderText, type ParsedOrderItem } from "../../lib/orderParser";
 import type { Order, Product, Customer, ProductBatch } from "../../lib/types";
-import { orders as mockOrders, products as mockProducts, customers as mockCustomers } from "../data/mockData";
 
 interface OrderItemRow {
   productId: string;
@@ -56,6 +54,16 @@ export function OrderForm() {
 
   // Batch data per product — keyed by productId, sorted FIFO (oldest first)
   const [productBatches, setProductBatches] = useState<Record<string, ProductBatch[]>>({});
+
+  const getOldestInStock = (batches: ProductBatch[]): ProductBatch | undefined =>
+    batches
+      .filter((b) => b.numberOfBottles > 0)
+      .sort((a, b) => {
+        if (!a.manufactureDate && !b.manufactureDate) return 0;
+        if (!a.manufactureDate) return 1;
+        if (!b.manufactureDate) return -1;
+        return new Date(a.manufactureDate).getTime() - new Date(b.manufactureDate).getTime();
+      })[0];
 
   const loadBatchesForProduct = async (productId: string): Promise<ProductBatch[]> => {
     if (!productId) return [];
@@ -115,10 +123,10 @@ export function OrderForm() {
           const cc = getCachedCustomers() as Customer[] | null;
           const cp = getCachedProducts() as Product[] | null;
           const co = getCachedOrders() as Order[] | null;
-          setCustomers(cc?.length ? cc : mockCustomers);
-          setProducts(cp?.length ? cp : mockProducts);
+          setCustomers(cc ?? []);
+          setProducts(cp ?? []);
           if (isEditing && id) {
-            const order = (co ?? mockOrders).find((o) => o.id === id) ?? null;
+            const order = (co ?? []).find((o) => o.id === id) ?? null;
             setExistingOrder(order);
             if (order) {
               setFormData({
@@ -143,10 +151,10 @@ export function OrderForm() {
         const cc = getCachedCustomers() as Customer[] | null;
         const cp = getCachedProducts() as Product[] | null;
         const co = getCachedOrders() as Order[] | null;
-        setCustomers(cc?.length ? cc : mockCustomers);
-        setProducts(cp?.length ? cp : mockProducts);
+        setCustomers(cc ?? []);
+        setProducts(cp ?? []);
         if (isEditing && id) {
-          const order = (co ?? mockOrders).find((o) => o.id === id) ?? null;
+          const order = (co ?? []).find((o) => o.id === id) ?? null;
           setExistingOrder(order);
           if (order) {
             setFormData({
@@ -155,6 +163,7 @@ export function OrderForm() {
               date: order.date,
               status: order.status,
               paymentStatus: order.paymentStatus,
+              paymentMethod: order.paymentMethod,
               notes: order.notes ?? "",
             });
             const items = order.items && order.items.length > 0
@@ -207,16 +216,17 @@ export function OrderForm() {
     setOrderItems((prev) => prev.map((item, i) => i === index ? { ...item, productId, batchId: "" } : item));
     if (!productId) return;
     const batches = await loadBatchesForProduct(productId);
-    if (batches.length > 0) {
+    const oldest = getOldestInStock(batches);
+    if (oldest) {
       setOrderItems((prev) => prev.map((item, i) =>
-        i === index && item.productId === productId ? { ...item, batchId: batches[0].id } : item
+        i === index && item.productId === productId ? { ...item, batchId: oldest.id } : item
       ));
     }
   };
 
   const getItemBatch = (item: OrderItemRow): ProductBatch | undefined => {
     const batches = productBatches[item.productId] ?? [];
-    return batches.find((b) => b.id === item.batchId) ?? batches[0];
+    return batches.find((b) => b.id === item.batchId) ?? getOldestInStock(batches);
   };
 
   const getOrderTotal = () => {
@@ -322,7 +332,8 @@ export function OrderForm() {
       `*Total: ₹${total}*`,
       `Date: ${date}`,
       ``,
-      `Thank you for your business! 🙏`,
+      `_"Health begins in the kitchen."_`,
+      `_Thank you for choosing us for your health!_`,
     ].join("\n").trim();
 
     const customer = customers.find((c) => c.id === formData.customerId);
@@ -353,6 +364,11 @@ export function OrderForm() {
         const qty = parseInt(orderItems[i].quantity, 10);
         if (isNaN(qty) || qty <= 0) {
           toast.error(`Please enter a valid quantity for item ${i + 1}`);
+          return;
+        }
+        const batch = getItemBatch(orderItems[i]);
+        if (!batch) {
+          toast.error("Something went wrong. Please try again.");
           return;
         }
       }
@@ -425,8 +441,6 @@ export function OrderForm() {
         });
         toast.success("Order created successfully!");
       }
-      const fresh = await getOrders();
-      setCachedOrders(fresh);
       navigate("/orders");
     } catch (err) {
       console.error(err);
@@ -450,8 +464,6 @@ export function OrderForm() {
     }
     try {
       await deleteOrder(id);
-      const fresh = await getOrders();
-      setCachedOrders(fresh);
       toast.success("Order deleted");
       navigate("/orders");
     } catch (err) {
@@ -698,7 +710,8 @@ export function OrderForm() {
           <div className="space-y-3">
             {orderItems.map((item, index) => {
               const selectedProduct = products.find((p) => p.id === item.productId);
-              const batchesForProduct = productBatches[item.productId] ?? [];
+              const allBatchesForProduct = productBatches[item.productId] ?? [];
+              const batchesForProduct = allBatchesForProduct.filter((b) => b.numberOfBottles > 0 || b.id === item.batchId);
               const selectedBatch = batchesForProduct.find((b) => b.id === item.batchId) ?? batchesForProduct[0];
               const qty = parseInt(item.quantity || "0", 10);
               const subtotal = (selectedBatch?.unitPrice ?? 0) * qty;
