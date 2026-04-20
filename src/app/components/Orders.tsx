@@ -2,10 +2,10 @@ import React,{ useState, useEffect, useMemo } from "react";
 import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
-import { getOrders, getProducts, updateOrder, InsufficientStockError } from "../../lib/api";
+import { getOrdersPaginated, getProducts, updateOrder, InsufficientStockError } from "../../lib/api";
 import { toast } from "sonner";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { getCachedOrders, getCachedProducts, setCachedOrders, setCachedProducts } from "../../lib/cache";
+import { getCachedOrders, getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineOrdersDB, type OfflineOrder } from "../../lib/db";
 import { SYNC_COMPLETE_EVENT } from "../hooks/useOfflineSync";
@@ -22,6 +22,10 @@ export function Orders() {
   const [products, setProducts] = useState<Product[]>([]);
   const [pendingOrders, setPendingOrders] = useState<OfflineOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
+  const loaderRef = React.useRef<HTMLDivElement>(null);
 
   const loadPending = () =>
     offlineOrdersDB.getAll().then(setPendingOrders).catch(console.error);
@@ -159,35 +163,75 @@ export function Orders() {
     return () => window.removeEventListener(SYNC_COMPLETE_EVENT, loadPending);
   }, []);
 
-  useEffect(() => {
-    const load = async () => {
-      const useSupabase = isSupabaseConfigured() && isOnline;
-      if (useSupabase) {
-        try {
-          const [ordersData, productsData] = await Promise.all([getOrders(), getProducts()]);
-          setOrders(ordersData);
-          setProducts(productsData);
-          setCachedOrders(ordersData);
-          setCachedProducts(productsData);
-        } catch (e) {
-          console.error(e);
-          const co = getCachedOrders() as Order[] | null;
-          const cp = getCachedProducts() as Product[] | null;
-          setOrders(co ?? []);
-          setProducts(cp ?? []);
-        } finally {
-          setLoading(false);
-        }
-      } else {
+  const loadOrders = async (pageNum: number, replace: boolean) => {
+    if (!isSupabaseConfigured() || !isOnline) {
+      if (replace) {
         const co = getCachedOrders() as Order[] | null;
-        const cp = getCachedProducts() as Product[] | null;
         setOrders(co ?? []);
-        setProducts(cp ?? []);
+        setHasMore(false);
         setLoading(false);
       }
+      return;
+    }
+    try {
+      const { orders: newOrders, hasMore: more } = await getOrdersPaginated(pageNum, statusFilter, sortOrder);
+      setOrders((prev) => replace ? newOrders : [...prev, ...newOrders]);
+      setHasMore(more);
+    } catch (e) {
+      console.error(e);
+      if (replace) {
+        const co = getCachedOrders() as Order[] | null;
+        setOrders(co ?? []);
+        setHasMore(false);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  // Initial load + reload when filter/sort/online changes
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      setPage(0);
+      setHasMore(true);
+      // Load products once
+      if (isSupabaseConfigured() && isOnline) {
+        try {
+          const productsData = await getProducts();
+          setProducts(productsData);
+          setCachedProducts(productsData);
+        } catch {
+          const cp = getCachedProducts() as Product[] | null;
+          setProducts(cp ?? []);
+        }
+      } else {
+        const cp = getCachedProducts() as Product[] | null;
+        setProducts(cp ?? []);
+      }
+      await loadOrders(0, true);
     };
-    load();
-  }, [isOnline]);
+    init();
+  }, [isOnline, statusFilter, sortOrder]);
+
+  // Infinite scroll — observe loader div
+  useEffect(() => {
+    if (!loaderRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          setLoadingMore(true);
+          const nextPage = page + 1;
+          setPage(nextPage);
+          loadOrders(nextPage, false);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(loaderRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loading, page, statusFilter, sortOrder]);
 
   const getProductName = (productId: string) => {
     const product = products.find((p) => p.id === productId);
@@ -267,10 +311,6 @@ export function Orders() {
   const searchedOrders = searchQuery ? orderFuse.search(searchQuery).map((r) => r.item) : orders;
 
   const filteredOrders = searchedOrders
-    .filter((order) => {
-      const matchesStatus = statusFilter === "All" || order.status === statusFilter;
-      return matchesStatus;
-    })
     .sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
@@ -645,6 +685,16 @@ export function Orders() {
             })}
           </div>
         )}
+
+        {/* Infinite scroll trigger */}
+        <div ref={loaderRef} className="py-2 text-center">
+          {loadingMore && (
+            <div className="w-6 h-6 border-2 border-[#2563eb] border-t-transparent rounded-full animate-spin mx-auto" />
+          )}
+          {!hasMore && filteredOrders.length > 0 && (
+            <p className="text-xs text-[#737686]">All orders loaded</p>
+          )}
+        </div>
       </div>
 
       <ConfirmModal

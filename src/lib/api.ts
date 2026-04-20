@@ -209,6 +209,58 @@ function isStockDeducted(status: Order["status"]): boolean {
 
 // ——— Orders (with order_items: one item per order for current UI) ———
 
+const PAGE_SIZE = 30;
+
+export async function getOrdersPaginated(
+  page: number,
+  status: "All" | "Pending" | "Packed" | "Delivered" | "Cancelled" = "All",
+  sortOrder: "recent" | "oldest" = "recent"
+): Promise<{ orders: Order[]; hasMore: boolean }> {
+  if (!isSupabaseConfigured() || !supabase) return { orders: [], hasMore: false };
+  const from = page * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
+  let query = supabase
+    .from("orders")
+    .select("*")
+    .order("order_date", { ascending: sortOrder === "oldest" })
+    .order("created_at", { ascending: sortOrder === "oldest" })
+    .range(from, to);
+
+  if (status !== "All") query = query.eq("status", status);
+
+  const { data: ordersData, error: ordersError } = await query;
+  if (ordersError) throw ordersError;
+  if (!ordersData?.length) return { orders: [], hasMore: false };
+
+  const orderIds = ordersData.map((o) => o.id);
+  const { data: itemsData, error: itemsError } = await supabase
+    .from("order_items")
+    .select("*")
+    .in("order_id", orderIds);
+  if (itemsError) throw itemsError;
+
+  const customerIds = [...new Set(ordersData.map((o) => o.customer_id).filter(Boolean))];
+  const customerMap = new Map<string, string>();
+  if (customerIds.length > 0) {
+    const { data: customersData } = await supabase.from("customers").select("id, name").in("id", customerIds);
+    (customersData ?? []).forEach((c) => customerMap.set(c.id, c.name));
+  }
+
+  const itemsByOrder = new Map<string, (typeof itemsData)[0][]>();
+  for (const item of itemsData ?? []) {
+    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
+    itemsByOrder.get(item.order_id)!.push(item);
+  }
+
+  const orders = ordersData.map((o) => {
+    const customerName = o.customer_name ?? customerMap.get(o.customer_id) ?? "";
+    return mapOrder(o, itemsByOrder.get(o.id) ?? [], customerName);
+  });
+
+  return { orders, hasMore: ordersData.length === PAGE_SIZE };
+}
+
 export async function getOrders(): Promise<Order[]> {
   if (!isSupabaseConfigured() || !supabase) return [];
   const { data: ordersData, error: ordersError } = await supabase
