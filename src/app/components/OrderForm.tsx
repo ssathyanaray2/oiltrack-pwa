@@ -932,14 +932,22 @@ export function OrderForm() {
           </button>
 
           {isEditing && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-2xl py-4 font-semibold text-base flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
-            >
-              <Trash2 className="h-5 w-5" />
-              Delete Order
-            </button>
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={formData.status !== "Pending" && formData.status !== "Cancelled"}
+                className="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-2xl py-4 font-semibold text-base flex items-center justify-center gap-2 transition-colors active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-50"
+              >
+                <Trash2 className="h-5 w-5" />
+                Delete Order
+              </button>
+              {formData.status !== "Pending" && formData.status !== "Cancelled" && (
+                <p className="text-xs text-center text-[#737686]">
+                  Orders can only be deleted when status is Pending or Cancelled
+                </p>
+              )}
+            </div>
           )}
         </div>
       </form>
