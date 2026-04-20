@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
 import { useNavigate, useParams } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
@@ -38,6 +39,15 @@ export function OrderForm() {
   const [products, setProducts] = useState<Product[]>([]);
   const [existingOrder, setExistingOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+  const customerSearchRef = useRef<HTMLInputElement>(null);
+
+  const customerFuse = useMemo(() => new Fuse(customers, { keys: ["name", "phone"], threshold: 0.3 }), [customers]);
+  const filteredCustomers = customerSearch
+    ? customerFuse.search(customerSearch).map((r) => r.item)
+    : customers;
 
   const [formData, setFormData] = useState({
     customerId: "",
@@ -197,6 +207,8 @@ export function OrderForm() {
     const customer = customers.find((c) => c.id === customerId);
     setFormData({ ...formData, customerId, customerName: customer?.name ?? "" });
     setShowLastOrder(false);
+    setCustomerSearch("");
+    setCustomerDropdownOpen(false);
   };
 
   const addItem = () => {
@@ -588,20 +600,40 @@ export function OrderForm() {
               
             </Link>
           </div>
-          <select
-            id="customerId"
-            value={formData.customerId}
-            onChange={(e) => handleCustomerChange(e.target.value)}
-            className="w-full px-4 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
-            required
-          >
-            <option value="">Select a customer</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <input
+              ref={customerSearchRef}
+              type="text"
+              placeholder={formData.customerName || "Search customer…"}
+              value={customerDropdownOpen ? customerSearch : (formData.customerName || "")}
+              onFocus={() => {
+                setCustomerDropdownOpen(true);
+                setCustomerSearch("");
+              }}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+              onBlur={() => setTimeout(() => setCustomerDropdownOpen(false), 150)}
+              className="w-full px-4 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] placeholder-[#737686] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            />
+            {customerDropdownOpen && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-[#c3c6d7] rounded-xl shadow-lg max-h-52 overflow-y-auto">
+                {filteredCustomers.length === 0 ? (
+                  <div className="px-4 py-3 text-sm text-[#737686]">No customers found</div>
+                ) : (
+                  filteredCustomers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      type="button"
+                      onMouseDown={() => handleCustomerChange(customer.id)}
+                      className={`w-full text-left px-4 py-3 text-sm hover:bg-[#f2f3ff] transition-colors ${formData.customerId === customer.id ? "bg-[#eaedff] font-semibold text-[#004ac6]" : "text-[#131b2e]"}`}
+                    >
+                      {customer.name}
+                      {customer.phone && <span className="ml-2 text-xs text-[#737686]">{customer.phone}</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           {formData.customerId && (
             <p className="mt-2.5 text-xs text-[#737686] flex items-start gap-1.5">
               <span className="font-medium text-[#434655]">Delivery:</span>
