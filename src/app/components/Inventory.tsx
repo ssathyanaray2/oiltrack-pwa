@@ -415,7 +415,7 @@ export function Inventory() {
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as FilterOption)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
+            className={`text-sm font-semibold px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
               filter !== "all"
                 ? "bg-[#004ac6] text-white border-[#004ac6]"
                 : "bg-white text-[#434655] border-[#c3c6d7]"

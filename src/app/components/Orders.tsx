@@ -1009,7 +1009,7 @@ export function Orders() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
+            className={`text-sm font-semibold px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
               statusFilter !== "All"
                 ? "bg-[#004ac6] text-white border-[#004ac6]"
                 : "bg-white text-[#434655] border-[#c3c6d7]"
@@ -1025,7 +1025,7 @@ export function Orders() {
           <select
             value={paymentFilter}
             onChange={(e) => setPaymentFilter(e.target.value as PaymentFilter)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
+            className={`text-sm font-semibold px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
               paymentFilter === "Partial"
                 ? "bg-orange-500 text-white border-orange-500"
                 : paymentFilter === "Unpaid"
