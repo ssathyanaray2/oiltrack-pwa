@@ -3,7 +3,7 @@ import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
 import { useNavigate, useParams } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
-import { ArrowLeft, Save, Trash2, Share2, WifiOff, Plus, X, Sparkles, RotateCcw, CheckCircle } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Share2, WifiOff, Plus, X, Sparkles, RotateCcw, CheckCircle, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
@@ -16,16 +16,26 @@ import {
   createOrder,
   updateOrder,
   deleteOrder,
+  getTags,
+  createTag,
+  assignTagToOrder,
+  removeTagFromOrder,
+  getTagsForOrder,
+  getNextReceiptNumber,
+  uploadReceipt,
+  getReceiptDownloadUrl,
+  receiptExists,
 } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, getCachedCustomers, getCachedBatches, setCachedProducts, setCachedCustomers } from "../../lib/cache";
 import { parseOrderText, type ParsedOrderItem } from "../../lib/orderParser";
-import type { Order, Product, Customer, ProductBatch } from "../../lib/types";
+import type { Order, Product, Customer, ProductBatch, Tag } from "../../lib/types";
 
 interface OrderItemRow {
   productId: string;
   quantity: string;
   batchId?: string;
+  unitPrice?: string;
 }
 
 export function OrderForm() {
@@ -56,11 +66,32 @@ export function OrderForm() {
     status: "Pending" as Order["status"],
     paymentStatus: "Unpaid" as Order["paymentStatus"],
     paymentMethod: undefined as Order["paymentMethod"],
+    amountPaid: "" as string,
+    deliveryDate: "" as string,
+    deliveryCharge: "" as string,
     notes: "",
   });
+  const [paymentDetailsOpen, setPaymentDetailsOpen] = useState(false);
+  const [deliveryDetailsOpen, setDeliveryDetailsOpen] = useState(false);
+
+  // Tags
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [tagSearch, setTagSearch] = useState("");
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const [creatingTag, setCreatingTag] = useState(false);
+  const [newTagColor, setNewTagColor] = useState("#6366f1");
+  const tagSearchRef = useRef<HTMLInputElement>(null);
+
+  const TAG_COLORS = ["#6366f1","#0ea5e9","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6"];
+
+  const filteredTagOptions = allTags.filter(
+    (t) => !selectedTags.find((s) => s.id === t.id) && t.name.toLowerCase().includes(tagSearch.toLowerCase())
+  );
 
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([{ productId: "", quantity: "" }]);
   const [saving, setSaving] = useState(false);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
 
   // Batch data per product — keyed by productId, sorted FIFO (oldest first)
   const [productBatches, setProductBatches] = useState<Record<string, ProductBatch[]>>({});
@@ -104,13 +135,15 @@ export function OrderForm() {
       const useSupabase = isSupabaseConfigured() && isOnline;
       if (useSupabase) {
         try {
-          const [customersData, productsData] = await Promise.all([getCustomers(), getProducts()]);
+          const [customersData, productsData, tagsData] = await Promise.all([getCustomers(), getProducts(), getTags()]);
           setCustomers(customersData);
           setProducts(productsData);
+          setAllTags(tagsData);
           setCachedCustomers(customersData);
           setCachedProducts(productsData);
           if (isEditing && id) {
-            const order = await getOrder(id);
+            const [order, orderTags] = await Promise.all([getOrder(id), getTagsForOrder(id)]);
+            setSelectedTags(orderTags);
             setExistingOrder(order ?? null);
             if (order) {
               setFormData({
@@ -120,10 +153,13 @@ export function OrderForm() {
                 status: order.status,
                 paymentStatus: order.paymentStatus,
                 paymentMethod: order.paymentMethod,
+                amountPaid: order.amountPaid != null ? String(order.amountPaid) : "",
+                deliveryDate: order.deliveryDate ?? "",
+                deliveryCharge: order.deliveryCharge != null ? String(order.deliveryCharge) : "",
                 notes: order.notes ?? "",
               });
               const items = order.items && order.items.length > 0
-                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString(), batchId: i.batchId }))
+                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString(), batchId: i.batchId, unitPrice: i.unitPrice != null ? String(i.unitPrice) : undefined }))
                 : [{ productId: order.productId, quantity: order.quantity.toString() }];
               setOrderItems(items);
             }
@@ -146,10 +182,13 @@ export function OrderForm() {
                 status: order.status,
                 paymentStatus: order.paymentStatus,
                 paymentMethod: order.paymentMethod,
+                amountPaid: order.amountPaid != null ? String(order.amountPaid) : "",
+                deliveryDate: order.deliveryDate ?? "",
+                deliveryCharge: order.deliveryCharge != null ? String(order.deliveryCharge) : "",
                 notes: order.notes ?? "",
               });
               const items = order.items && order.items.length > 0
-                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString(), batchId: i.batchId }))
+                ? order.items.map((i) => ({ productId: i.productId, quantity: i.quantity.toString(), batchId: i.batchId, unitPrice: i.unitPrice != null ? String(i.unitPrice) : undefined }))
                 : [{ productId: order.productId, quantity: order.quantity.toString() }];
               setOrderItems(items);
             }
@@ -225,13 +264,26 @@ export function OrderForm() {
 
   const handleProductSelect = async (index: number, productId: string) => {
     // Immediately update productId so UI responds
-    setOrderItems((prev) => prev.map((item, i) => i === index ? { ...item, productId, batchId: "" } : item));
+    setOrderItems((prev) => prev.map((item, i) => i === index ? { ...item, productId, batchId: "", unitPrice: undefined } : item));
     if (!productId) return;
     const batches = await loadBatchesForProduct(productId);
     const oldest = getOldestInStock(batches);
     if (oldest) {
       setOrderItems((prev) => prev.map((item, i) =>
-        i === index && item.productId === productId ? { ...item, batchId: oldest.id } : item
+        i === index && item.productId === productId
+          ? { ...item, batchId: oldest.id, unitPrice: String(oldest.unitPrice) }
+          : item
+      ));
+    }
+  };
+
+  const handleBatchSelect = (index: number, batchId: string) => {
+    updateItem(index, "batchId", batchId);
+    const batches = productBatches[orderItems[index].productId] ?? [];
+    const batch = batches.find((b) => b.id === batchId);
+    if (batch) {
+      setOrderItems((prev) => prev.map((item, i) =>
+        i === index ? { ...item, batchId, unitPrice: String(batch.unitPrice) } : item
       ));
     }
   };
@@ -241,11 +293,18 @@ export function OrderForm() {
     return batches.find((b) => b.id === item.batchId) ?? getOldestInStock(batches);
   };
 
+  const getEffectiveUnitPrice = (item: OrderItemRow): number => {
+    if (item.unitPrice !== undefined && item.unitPrice !== "") {
+      const parsed = parseFloat(item.unitPrice);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return getItemBatch(item)?.unitPrice ?? 0;
+  };
+
   const getOrderTotal = () => {
     return orderItems.reduce((sum, item) => {
-      const batch = getItemBatch(item);
       const qty = parseInt(item.quantity || "0", 10);
-      return sum + (batch?.unitPrice ?? 0) * qty;
+      return sum + getEffectiveUnitPrice(item) * qty;
     }, 0);
   };
 
@@ -327,10 +386,10 @@ export function OrderForm() {
     });
     const itemLines = orderItems.map((item) => {
       const product = products.find((p) => p.id === item.productId);
-      const batch = getItemBatch(item);
+      const price = getEffectiveUnitPrice(item);
       const qty = parseInt(item.quantity || "0", 10);
-      const subtotal = (batch?.unitPrice ?? 0) * qty;
-      return `• ${product?.name ?? "Unknown"} (${product?.unitSize}L/bottle) — ${qty} bottles @ ₹${batch?.unitPrice ?? 0}/bottle = ₹${subtotal.toLocaleString("en-IN")}`;
+      const subtotal = price * qty;
+      return `• ${product?.name ?? "Unknown"} (${product?.unitSize}L/bottle) — ${qty} bottles @ ₹${price}/bottle = ₹${subtotal.toLocaleString("en-IN")}`;
     }).join("\n");
     const total = getOrderTotal().toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
@@ -354,6 +413,40 @@ export function OrderForm() {
 
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
     window.open(url, "_blank");
+  };
+
+  const handleDownloadReceipt = async () => {
+    if (!existingOrder) return;
+    setDownloadingReceipt(true);
+    try {
+      const filename = `Receipt_${existingOrder.date}_${existingOrder.customerName.replace(/\s+/g, "_")}.pdf`;
+
+      // Check storage directly — most reliable source of truth
+      const exists = await receiptExists(existingOrder.id);
+      if (exists) {
+        const signedUrl = await getReceiptDownloadUrl(existingOrder.id);
+        if (signedUrl) {
+          window.open(signedUrl, "_blank", "noopener,noreferrer");
+          toast.success("Receipt opened");
+          return;
+        }
+      }
+
+      // Not in storage — generate, upload (+ save receipt number atomically), open
+      const { generateReceiptPDF } = await import("../../lib/receiptGenerator");
+      const receiptNum = existingOrder.receiptNumber ?? await getNextReceiptNumber(existingOrder.date);
+      const pdfBlob = generateReceiptPDF(existingOrder, products, receiptNum);
+      await uploadReceipt(existingOrder.id, pdfBlob, existingOrder.receiptNumber ? undefined : receiptNum);
+      const url = URL.createObjectURL(pdfBlob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success("Receipt opened");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to download receipt");
+    } finally {
+      setDownloadingReceipt(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -389,6 +482,7 @@ export function OrderForm() {
         productId: item.productId,
         quantity: parseInt(item.quantity, 10),
         batchId: item.batchId || undefined,
+        unitPrice: getEffectiveUnitPrice(item),
       }));
 
       if (!isOnline && !isEditing) {
@@ -426,6 +520,10 @@ export function OrderForm() {
         }
       }
 
+      const amountPaidNum = formData.paymentStatus === "Partial" ? parseFloat(formData.amountPaid) || 0 : undefined;
+      const deliveryChargeNum = formData.deliveryCharge ? parseFloat(formData.deliveryCharge) || 0 : undefined;
+      const deliveryDateVal = formData.deliveryDate || null;
+      let savedOrderId = id;
       if (isEditing && id) {
         await updateOrder(id, {
           customerId: formData.customerId,
@@ -434,12 +532,19 @@ export function OrderForm() {
           status: formData.status,
           paymentStatus: formData.paymentStatus,
           paymentMethod: formData.paymentStatus === "Paid" ? formData.paymentMethod : null,
+          amountPaid: amountPaidNum,
+          deliveryDate: deliveryDateVal,
+          deliveryCharge: deliveryChargeNum,
           notes: formData.notes || undefined,
           items: parsedItems,
         });
+        // Sync tags: remove all then re-assign
+        const existing = await getTagsForOrder(id);
+        await Promise.all(existing.map((t) => removeTagFromOrder(id, t.id)));
+        await Promise.all(selectedTags.map((t) => assignTagToOrder(id, t.id)));
         toast.success("Order updated successfully!");
       } else {
-        await createOrder({
+        const newOrder = await createOrder({
           customerId: formData.customerId,
           customerName: formData.customerName,
           productId: parsedItems[0].productId,
@@ -448,11 +553,40 @@ export function OrderForm() {
           status: formData.status,
           paymentStatus: formData.paymentStatus,
           paymentMethod: formData.paymentStatus === "Paid" ? formData.paymentMethod : undefined,
+          amountPaid: amountPaidNum,
+          deliveryDate: deliveryDateVal ?? undefined,
+          deliveryCharge: deliveryChargeNum,
           notes: formData.notes || undefined,
           items: parsedItems,
         });
+        savedOrderId = newOrder.id;
+        await Promise.all(selectedTags.map((t) => assignTagToOrder(savedOrderId!, t.id)));
         toast.success("Order created successfully!");
       }
+
+      // Regenerate receipt only if: status just changed to Delivered, OR receipt-relevant
+      // fields changed (items, prices, delivery charge, date, customer). Payment-only
+      // changes do not affect the receipt so skip regeneration in that case.
+      const wasDelivered = existingOrder?.status === "Delivered";
+      const statusChangedToDelivered = !wasDelivered && formData.status === "Delivered";
+      const receiptFieldsChanged = wasDelivered && (
+        existingOrder?.customerName !== formData.customerName ||
+        existingOrder?.date !== formData.date ||
+        (existingOrder?.deliveryCharge ?? 0) !== (deliveryChargeNum ?? 0) ||
+        JSON.stringify(parsedItems.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice }))) !==
+        JSON.stringify((existingOrder?.items ?? []).map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice ?? 0 })))
+      );
+      if (formData.status === "Delivered" && savedOrderId && (statusChangedToDelivered || receiptFieldsChanged)) {
+        const { generateReceiptPDF } = await import("../../lib/receiptGenerator");
+        const savedOrder = await getOrder(savedOrderId!);
+        if (savedOrder) {
+          const receiptNum = savedOrder.receiptNumber ?? await getNextReceiptNumber(savedOrder.date);
+          const pdfBlob = generateReceiptPDF(savedOrder, products, receiptNum);
+          // upsert:true overwrites existing file; only save receipt number if new
+          await uploadReceipt(savedOrderId!, pdfBlob, savedOrder.receiptNumber ? undefined : receiptNum);
+        }
+      }
+
       navigate("/orders");
     } catch (err) {
       console.error(err);
@@ -493,14 +627,14 @@ export function OrderForm() {
           <div className="h-5 w-24 bg-[#e2e7ff] rounded-full" />
           <div className="w-9 h-9 rounded-xl bg-[#e2e7ff]" />
         </div>
-        <div className="space-y-4 mt-4">
+        <div className="space-y-4 mt-4 max-w-2xl lg:max-w-4xl mx-auto px-5">
           {/* Customer card */}
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
             <div className="h-4 w-20 bg-[#e2e7ff] rounded-full mb-3" />
             <div className="h-12 w-full bg-[#e2e7ff] rounded-xl" />
           </div>
           {/* Order items card */}
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
             <div className="flex items-center justify-between mb-4">
               <div className="h-4 w-20 bg-[#e2e7ff] rounded-full" />
               <div className="h-8 w-8 bg-[#e2e7ff] rounded-xl" />
@@ -511,7 +645,7 @@ export function OrderForm() {
             </div>
           </div>
           {/* Status / notes card */}
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <div className="h-3.5 w-16 bg-[#e2e7ff] rounded-full mb-2" />
@@ -526,7 +660,7 @@ export function OrderForm() {
             <div className="h-20 bg-[#e2e7ff] rounded-xl" />
           </div>
           {/* Submit button */}
-          <div className="mx-5 h-14 bg-[#e2e7ff] rounded-2xl" />
+          <div className="h-14 bg-[#e2e7ff] rounded-2xl" />
         </div>
       </div>
     );
@@ -559,14 +693,31 @@ export function OrderForm() {
           {isEditing ? "Edit Order" : "New Order"}
         </h1>
         {isEditing ? (
-          <button
-            type="button"
-            onClick={handleShare}
-            className="flex items-center justify-center w-9 h-9 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95"
-            title="Share order"
-          >
-            <Share2 className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {(formData.status === "Delivered" || existingOrder?.status === "Delivered") && (
+              <button
+                type="button"
+                onClick={handleDownloadReceipt}
+                disabled={downloadingReceipt}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-50 text-green-700 hover:bg-green-100 transition-colors active:scale-95 disabled:opacity-50 text-sm font-semibold"
+                title="Open receipt"
+              >
+                {downloadingReceipt
+                  ? <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+                  : <FileDown className="h-4 w-4" />}
+                <span className="hidden lg:inline">Receipt</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleShare}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#f2f3ff] text-[#434655] hover:bg-[#eaedff] transition-colors active:scale-95 text-sm font-semibold"
+              title="Share order"
+            >
+              <Share2 className="h-4 w-4" />
+              <span className="hidden lg:inline">Share</span>
+            </button>
+          </div>
         ) : (
           <div className="w-9" />
         )}
@@ -574,7 +725,7 @@ export function OrderForm() {
 
       {/* Offline banner */}
       {!isOnline && (
-        <div className="mx-5 mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
+        <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3 max-w-2xl lg:max-w-4xl mx-5 lg:mx-auto">
           <WifiOff className="h-5 w-5 text-amber-600 flex-shrink-0" />
           <div>
             <p className="font-semibold text-amber-800 text-sm">You're offline</p>
@@ -585,9 +736,9 @@ export function OrderForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+      <form onSubmit={handleSubmit} className="space-y-4 mt-4 max-w-2xl lg:max-w-4xl mx-auto px-5">
         {/* Customer section */}
-        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
           <div className="flex items-center justify-between mb-3">
             <label htmlFor="customerId" className="text-sm font-semibold text-[#131b2e]">
               Customer <span className="text-red-500">*</span>
@@ -675,7 +826,7 @@ export function OrderForm() {
                         return (
                           <div key={i} className="flex items-center justify-between text-sm">
                             <span className="text-[#131b2e] font-medium">{product?.name ?? "Unknown"}</span>
-                            <span className="text-[#737686]">{item.quantity} {product?.unit ?? "L"}</span>
+                            <span className="text-[#737686]">{item.quantity} bottles{product?.unitSize ? ` · ${product.unitSize}L each` : ""}</span>
                           </div>
                         );
                       })}
@@ -695,7 +846,7 @@ export function OrderForm() {
         </div>
 
         {/* Order Items section */}
-        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-semibold text-[#131b2e]">Oil Items <span className="text-red-500">*</span></h2>
@@ -746,7 +897,10 @@ export function OrderForm() {
               const batchesForProduct = allBatchesForProduct.filter((b) => b.numberOfBottles > 0 || b.id === item.batchId);
               const selectedBatch = batchesForProduct.find((b) => b.id === item.batchId) ?? batchesForProduct[0];
               const qty = parseInt(item.quantity || "0", 10);
-              const subtotal = (selectedBatch?.unitPrice ?? 0) * qty;
+              const effectivePrice = getEffectiveUnitPrice(item);
+              const subtotal = effectivePrice * qty;
+              const batchPrice = selectedBatch?.unitPrice;
+              const isDiscounted = batchPrice != null && item.unitPrice !== undefined && item.unitPrice !== "" && parseFloat(item.unitPrice) !== batchPrice;
 
               return (
                 <div
@@ -788,7 +942,7 @@ export function OrderForm() {
                     {item.productId && batchesForProduct.length > 0 && (
                       <select
                         value={item.batchId ?? ""}
-                        onChange={(e) => updateItem(index, "batchId", e.target.value)}
+                        onChange={(e) => handleBatchSelect(index, e.target.value)}
                         disabled={isLocked}
                         className="w-full px-4 py-3 bg-white border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -798,6 +952,34 @@ export function OrderForm() {
                           </option>
                         ))}
                       </select>
+                    )}
+
+                    {item.productId && selectedBatch && (
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-semibold text-[#737686] uppercase tracking-wide mb-1 block">
+                            Price / bottle
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#737686] font-medium">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={item.unitPrice ?? ""}
+                              onChange={(e) => setOrderItems((prev) => prev.map((it, i) => i === index ? { ...it, unitPrice: e.target.value } : it))}
+                              placeholder={String(selectedBatch.unitPrice)}
+                              disabled={isLocked}
+                              className={`w-full pl-7 pr-3 py-2.5 bg-white border rounded-xl text-[#131b2e] focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${isDiscounted ? "border-amber-400 focus:border-amber-400" : "border-[#c3c6d7] focus:border-[#2563eb]"}`}
+                            />
+                          </div>
+                        </div>
+                        {isDiscounted && batchPrice != null && (
+                          <div className="text-xs text-amber-600 font-medium pt-5 flex-shrink-0">
+                            -{(batchPrice - parseFloat(item.unitPrice ?? "0")).toFixed(0)} off
+                          </div>
+                        )}
+                      </div>
                     )}
                     {item.productId && batchesForProduct.length === 0 && (
                       <p className="text-xs text-amber-600 px-1">No batches available — add stock via Inventory</p>
@@ -817,7 +999,12 @@ export function OrderForm() {
                     {item.productId && item.quantity && selectedBatch && (
                       <div className="flex items-center justify-between px-1">
                         <p className="text-xs text-[#737686]">Subtotal</p>
-                        <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
+                        <div className="text-right">
+                          <p className="font-bold text-[#131b2e] text-sm">₹{subtotal.toFixed(2)}</p>
+                          {isDiscounted && batchPrice != null && (
+                            <p className="text-[10px] text-amber-600">was ₹{(batchPrice * qty).toFixed(2)}</p>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -841,7 +1028,7 @@ export function OrderForm() {
         </div>
 
         {/* Date */}
-        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
           <label htmlFor="date" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
             Date <span className="text-red-500">*</span>
           </label>
@@ -857,7 +1044,7 @@ export function OrderForm() {
 
         {/* Order Status (edit only) */}
         {isEditing && (
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
             <label htmlFor="status" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
               Order Status
             </label>
@@ -890,43 +1077,221 @@ export function OrderForm() {
 
         {/* Payment Status (edit only) */}
         {isEditing && (
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 space-y-4">
-            <div>
+          <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+            <div className="p-5">
               <label htmlFor="paymentStatus" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
                 Payment Status
               </label>
               <select
                 id="paymentStatus"
                 value={formData.paymentStatus}
-                onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value as Order["paymentStatus"], paymentMethod: e.target.value === "Unpaid" ? undefined : formData.paymentMethod })}
+                onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value as Order["paymentStatus"], paymentMethod: e.target.value === "Unpaid" ? undefined : formData.paymentMethod, amountPaid: e.target.value !== "Partial" ? "" : formData.amountPaid })}
                 className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
               >
                 <option value="Unpaid">Unpaid</option>
+                <option value="Partial">Partial</option>
                 <option value="Paid">Paid</option>
               </select>
             </div>
-            {formData.paymentStatus === "Paid" && (
-              <div>
-                <label htmlFor="paymentMethod" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
-                  Payment Method
-                </label>
-                <select
-                  id="paymentMethod"
-                  value={formData.paymentMethod ?? ""}
-                  onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as Order["paymentMethod"] })}
-                  className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+            {/* Collapsible payment details */}
+            {formData.paymentStatus !== "Unpaid" && (
+              <div className="border-t border-[#f2f3ff]">
+                <button
+                  type="button"
+                  onClick={() => setPaymentDetailsOpen((o) => !o)}
+                  className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-[#434655]"
                 >
-                  <option value="">Select method</option>
-                  <option value="Cash">Cash</option>
-                  <option value="UPI">UPI</option>
-                </select>
+                  <span>Payment Details</span>
+                  <span className={`transition-transform ${paymentDetailsOpen ? "rotate-180" : ""}`}>▾</span>
+                </button>
+                {paymentDetailsOpen && (
+                  <div className="px-5 pb-5 space-y-4">
+                    {formData.paymentStatus === "Partial" && (
+                      <div>
+                        <label htmlFor="amountPaid" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+                          Amount Paid (₹)
+                        </label>
+                        <input
+                          id="amountPaid"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={formData.amountPaid}
+                          onChange={(e) => setFormData({ ...formData, amountPaid: e.target.value })}
+                          placeholder="0.00"
+                          className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="paymentMethod" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+                        Payment Method
+                      </label>
+                      <select
+                        id="paymentMethod"
+                        value={formData.paymentMethod ?? ""}
+                        onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value as Order["paymentMethod"] })}
+                        className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                      >
+                        <option value="">Select method</option>
+                        <option value="Cash">Cash</option>
+                        <option value="UPI">UPI</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
+        {/* Delivery Details */}
+        <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+          <button
+            type="button"
+            onClick={() => setDeliveryDetailsOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold text-[#131b2e]"
+          >
+            <span>Delivery Details</span>
+            <span className={`transition-transform inline-block ${deliveryDetailsOpen ? "rotate-180" : ""}`}>▾</span>
+          </button>
+          {deliveryDetailsOpen && (
+            <div className="px-5 pb-5 space-y-4 border-t border-[#f2f3ff] pt-4">
+              <div>
+                <label htmlFor="deliveryDate" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+                  Delivery Date
+                </label>
+                <input
+                  id="deliveryDate"
+                  type="date"
+                  value={formData.deliveryDate}
+                  onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
+                  className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+              </div>
+              <div>
+                <label htmlFor="deliveryCharge" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+                  Delivery Charge (₹)
+                </label>
+                <input
+                  id="deliveryCharge"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.deliveryCharge}
+                  onChange={(e) => setFormData({ ...formData, deliveryCharge: e.target.value })}
+                  placeholder="0.00"
+                  className="w-full px-5 py-3.5 bg-[#f2f3ff] border border-[#c3c6d7] rounded-xl text-[#131b2e] focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Tags */}
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+          <label className="block text-sm font-semibold text-[#131b2e] mb-2">Tags</label>
+          {/* Selected tags */}
+          <div className="flex flex-wrap gap-2 mb-3">
+            {selectedTags.map((tag) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold text-white"
+                style={{ backgroundColor: tag.color }}
+              >
+                {tag.name}
+                <button
+                  type="button"
+                  onClick={() => setSelectedTags((prev) => prev.filter((t) => t.id !== tag.id))}
+                  className="hover:opacity-70 ml-0.5"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              onClick={() => { setTagDropdownOpen(true); setTimeout(() => tagSearchRef.current?.focus(), 50); }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-[#f2f3ff] text-[#004ac6] border border-dashed border-[#c3c6d7] hover:border-[#004ac6] transition-colors"
+            >
+              <Plus className="h-3 w-3" /> Add tag
+            </button>
+          </div>
+          {/* Tag dropdown */}
+          {tagDropdownOpen && (
+            <div className="border border-[#c3c6d7] rounded-xl overflow-hidden">
+              <input
+                ref={tagSearchRef}
+                type="text"
+                value={tagSearch}
+                onChange={(e) => setTagSearch(e.target.value)}
+                placeholder="Search or create tag..."
+                className="w-full px-4 py-2.5 text-sm text-[#131b2e] placeholder:text-[#737686] focus:outline-none border-b border-[#f2f3ff]"
+              />
+              <div className="max-h-48 overflow-y-auto">
+                {filteredTagOptions.map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => { setSelectedTags((prev) => [...prev, tag]); setTagSearch(""); setTagDropdownOpen(false); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-[#f2f3ff] transition-colors text-left"
+                  >
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                    <span className="text-sm text-[#131b2e]">{tag.name}</span>
+                  </button>
+                ))}
+                {tagSearch.trim() && !allTags.find((t) => t.name.toLowerCase() === tagSearch.trim().toLowerCase()) && (
+                  <div className="px-4 py-3 border-t border-[#f2f3ff]">
+                    {!creatingTag ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-[#737686]">Create <strong className="text-[#131b2e]">"{tagSearch.trim()}"</strong></p>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {TAG_COLORS.map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setNewTagColor(c)}
+                              className={`w-5 h-5 rounded-full transition-transform ${newTagColor === c ? "scale-125 ring-2 ring-offset-1 ring-[#004ac6]" : ""}`}
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setCreatingTag(true);
+                            try {
+                              const newTag = await createTag(tagSearch.trim(), newTagColor);
+                              setAllTags((prev) => [...prev, newTag]);
+                              setSelectedTags((prev) => [...prev, newTag]);
+                              setTagSearch("");
+                              setTagDropdownOpen(false);
+                            } catch { toast.error("Failed to create tag"); }
+                            setCreatingTag(false);
+                          }}
+                          className="text-xs font-semibold text-white bg-[#004ac6] px-3 py-1.5 rounded-lg hover:bg-[#003ea8] transition-colors"
+                        >
+                          Create tag
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[#737686]">Creating...</p>
+                    )}
+                  </div>
+                )}
+                {filteredTagOptions.length === 0 && !tagSearch.trim() && (
+                  <p className="px-4 py-3 text-xs text-[#737686]">No more tags to add</p>
+                )}
+              </div>
+              <div className="border-t border-[#f2f3ff] px-4 py-2 flex justify-end">
+                <button type="button" onClick={() => { setTagDropdownOpen(false); setTagSearch(""); }} className="text-xs text-[#737686] hover:text-[#131b2e]">Done</button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Notes */}
-        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5">
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
           <label htmlFor="notes" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
             Notes
           </label>

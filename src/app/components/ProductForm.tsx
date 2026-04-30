@@ -34,9 +34,12 @@ export function ProductForm() {
 
     const name = formData.name.trim();
     const lowStockThreshold = parseFloat(formData.lowStockThreshold);
-    const unitSize = formData.unitSize ? parseFloat(formData.unitSize) : 1;
+    const unitSize = formData.unitSize
+      ? (formData.unit === "ml" ? parseFloat(formData.unitSize) / 1000 : parseFloat(formData.unitSize))
+      : NaN;
 
     if (!name) { toast.error("Product name is required"); return; }
+    if (isNaN(unitSize) || unitSize <= 0) { toast.error("Enter a valid container size"); return; }
     if (isNaN(lowStockThreshold) || lowStockThreshold < 0) { toast.error("Enter a valid reorder threshold"); return; }
 
     if (!isSupabaseConfigured() || !isOnline) {
@@ -74,7 +77,8 @@ export function ProductForm() {
           <div className="w-9" />
         </div>
         {/* Form card */}
-        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 mt-4 space-y-5">
+        <div className="max-w-2xl lg:max-w-4xl mx-auto px-5 mt-4">
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] space-y-5">
           {/* Name */}
           <div>
             <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full mb-2" />
@@ -115,6 +119,7 @@ export function ProductForm() {
           {/* Submit button */}
           <div className="h-14 w-full bg-[#e2e7ff] rounded-2xl" />
         </div>
+        </div>
       </div>
     );
   }
@@ -133,7 +138,8 @@ export function ProductForm() {
         <div className="w-9" />
       </div>
 
-      <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 mt-4">
+      <div className="max-w-2xl lg:max-w-4xl mx-auto px-5 mt-4">
+      <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
         <form onSubmit={handleSubmit} className="space-y-5">
 
           {/* Name */}
@@ -166,17 +172,22 @@ export function ProductForm() {
               className="w-full px-5 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e]"
             >
               <option value="Litres">Litres</option>
-              <option value="Kg">Kg</option>
-              <option value="Barrels">Barrels</option>
-              <option value="Units">Units</option>
+              <option value="ml">Ml (Millilitres)</option>
             </select>
           </div>
 
           {/* Reorder Threshold + Container Size side by side */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="lowStockThreshold" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
+              <label htmlFor="lowStockThreshold" className="flex items-center gap-1.5 text-sm font-semibold text-[#131b2e] mb-1.5">
                 Reorder At <span className="text-red-500">*</span>
+                <span className="relative group cursor-default">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#e2e7ff] text-[#004ac6] text-[10px] font-bold">?</span>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
+                    Measured in number of bottles
+                    <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#131b2e]" />
+                  </span>
+                </span>
               </label>
               <input
                 type="number"
@@ -193,20 +204,20 @@ export function ProductForm() {
             </div>
             <div>
               <label htmlFor="unitSize" className="block text-sm font-semibold text-[#131b2e] mb-1.5">
-                Container Size (L)
+                Container Size ({formData.unit === "ml" ? "ml" : "L"}) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
                 id="unitSize"
                 name="unitSize"
                 min="0"
-                step="0.1"
                 value={formData.unitSize}
                 onChange={handleChange}
                 className="w-full px-4 py-3.5 rounded-xl border border-[#c3c6d7] bg-white focus:outline-none focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/20 text-[#131b2e] placeholder:text-[#737686]"
-                placeholder="e.g. 15"
+                placeholder={formData.unit === "ml" ? "e.g. 500" : "e.g. 15"}
+                required
               />
-              <p className="text-xs text-[#737686] mt-1">Litres per container</p>
+              <p className="text-xs text-[#737686] mt-1">{formData.unit === "ml" ? "Millilitres per container" : "Litres per container"}</p>
             </div>
           </div>
 
@@ -225,6 +236,7 @@ export function ProductForm() {
             {saving ? "Adding…" : "Add Product"}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

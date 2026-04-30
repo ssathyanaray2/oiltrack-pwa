@@ -197,7 +197,8 @@ export function CustomerForm() {
           <div className="w-9" />
         </div>
         {/* Form card */}
-        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 mt-4 space-y-5">
+        <div className="max-w-2xl lg:max-w-4xl mx-auto px-5 mt-4">
+        <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] space-y-5 mt-4">
           {/* Name */}
           <div>
             <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full mb-2" />
@@ -228,6 +229,7 @@ export function CustomerForm() {
           </div>
           {/* Submit button */}
           <div className="h-14 w-full bg-[#e2e7ff] rounded-2xl" />
+        </div>
         </div>
       </div>
     );
@@ -260,9 +262,10 @@ export function CustomerForm() {
         )}
       </div>
 
+      <div className="max-w-2xl lg:max-w-4xl mx-auto px-5">
       {/* Offline banner */}
       {!isOnline && (
-        <div className="mx-5 mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
+        <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center gap-3">
           <WifiOff className="h-5 w-5 text-amber-600 flex-shrink-0" />
           <div>
             <p className="font-semibold text-amber-800 text-sm">You're offline</p>
@@ -274,7 +277,7 @@ export function CustomerForm() {
       )}
 
       {/* Form card */}
-      <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mx-5 mt-4">
+      <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] mt-4">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Name */}
           <div>
@@ -404,6 +407,7 @@ export function CustomerForm() {
             )}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

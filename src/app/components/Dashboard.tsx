@@ -5,7 +5,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, getCachedOrders, getCachedDashboard, setCachedProducts, setCachedOrders, setCachedDashboard } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Product, Order } from "../../lib/types";
-import { TrendingUp, ShoppingCart, AlertTriangle, Package, IndianRupee, KeyRound, LogOut, ChevronDown, ChevronLeft, ChevronRight, UserX } from "lucide-react";
+import { TrendingUp, ShoppingCart, Package, IndianRupee, KeyRound, LogOut, ChevronDown, ChevronLeft, ChevronRight, UserX } from "lucide-react";
 import { Link } from "react-router";
 import { toast } from "sonner";
 
@@ -216,7 +216,6 @@ export function Dashboard() {
 
   const pendingOrders = orders.filter((o) => o.status === "Pending");
   const deliveredOrders = orders.filter((o) => o.status === "Delivered");
-  const lowStockItems = products.filter((p) => p.stock === 0 || p.stock < p.lowStockThreshold);
   const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
   const now = new Date();
   const thisMonth = now.getMonth();
@@ -257,6 +256,17 @@ export function Dashboard() {
     const d = new Date(o.date);
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
   });
+
+  const monthlyProfit = monthlyOrders.reduce((sum, order) => {
+    const items = order.items?.length
+      ? order.items
+      : [{ productId: order.productId, quantity: order.quantity }];
+    return sum + items.reduce((s, item) => {
+      const unitPrice = item.unitPrice ?? 0;
+      const costPrice = item.costPrice ?? 0;
+      return s + Math.max(0, unitPrice - costPrice) * item.quantity;
+    }, 0);
+  }, 0);
 
   const monthlyLiters = monthlyOrders.reduce((sum, order) => {
     const items = order.items ?? [];
@@ -302,13 +312,15 @@ export function Dashboard() {
           <div className="h-6 w-24 bg-[#e2e7ff] rounded-full" />
           <div className="w-9 h-9 rounded-full bg-[#e2e7ff]" />
         </div>
-        <div className="px-5 pt-5 space-y-6 max-w-2xl mx-auto">
+        <div className="px-5 lg:px-8 pt-5 space-y-6">
+          {/* Greeting */}
           <div className="space-y-2">
             <div className="h-7 w-48 bg-[#e2e7ff] rounded-full" />
             <div className="h-4 w-64 bg-[#e2e7ff] rounded-full" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {[...Array(4)].map((_, i) => (
+          {/* KPI grid */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+            {[...Array(6)].map((_, i) => (
               <div key={i} className="bg-white rounded-2xl p-4 min-h-[110px] flex flex-col justify-between shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
                 <div className="h-3 w-20 bg-[#e2e7ff] rounded-full" />
                 <div className="space-y-2">
@@ -318,37 +330,39 @@ export function Dashboard() {
               </div>
             ))}
           </div>
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)] space-y-4">
-            <div className="h-4 w-32 bg-[#e2e7ff] rounded-full" />
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="space-y-2">
-                <div className="h-3 w-28 bg-[#e2e7ff] rounded-full" />
-                <div className="h-2.5 w-full bg-[#e2e7ff] rounded-full" />
-              </div>
-            ))}
-          </div>
-          <div className="space-y-3">
-            <div className="h-4 w-28 bg-[#e2e7ff] rounded-full" />
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="bg-white rounded-xl p-4 flex items-center justify-between shadow-[0_2px_8px_rgba(0,74,198,0.04)]">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-[#e2e7ff]" />
-                  <div className="space-y-1.5">
-                    <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full" />
-                    <div className="h-3 w-20 bg-[#e2e7ff] rounded-full" />
+          {/* 2-col layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: recent orders */}
+            <div className="space-y-3">
+              <div className="h-4 w-28 bg-[#e2e7ff] rounded-full" />
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="bg-white rounded-xl p-4 flex items-center justify-between shadow-[0_2px_8px_rgba(0,74,198,0.04)]">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-[#e2e7ff]" />
+                    <div className="space-y-1.5">
+                      <div className="h-3.5 w-28 bg-[#e2e7ff] rounded-full" />
+                      <div className="h-3 w-20 bg-[#e2e7ff] rounded-full" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 items-end flex flex-col">
+                    <div className="h-3.5 w-16 bg-[#e2e7ff] rounded-full" />
+                    <div className="h-5 w-14 bg-[#e2e7ff] rounded-full" />
                   </div>
                 </div>
-                <div className="space-y-1.5 items-end flex flex-col">
-                  <div className="h-3.5 w-16 bg-[#e2e7ff] rounded-full" />
-                  <div className="h-5 w-14 bg-[#e2e7ff] rounded-full" />
-                </div>
+              ))}
+            </div>
+            {/* Right: charts */}
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+                <div className="h-4 w-32 bg-[#e2e7ff] rounded-full mb-5" />
+                <div className="h-[220px] w-full bg-[#e2e7ff] rounded-xl" />
               </div>
-            ))}
-          </div>
-          <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
-            <div className="h-4 w-32 bg-[#e2e7ff] rounded-full mb-5" />
-            <div className="h-[220px] w-full bg-[#e2e7ff] rounded-xl" />
-          </div>
+              <div className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+                <div className="h-4 w-32 bg-[#e2e7ff] rounded-full mb-5" />
+                <div className="h-[200px] w-full bg-[#e2e7ff] rounded-xl" />
+              </div>
+            </div>{/* end right col */}
+          </div>{/* end 2-col */}
         </div>
       </div>
     );
@@ -359,7 +373,7 @@ export function Dashboard() {
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#faf8ff] px-5 py-4 flex items-center justify-between shadow-[0_1px_0_#c3c6d7]">
         <div>
-          <span className="text-xl font-bold text-[#131b2e] tracking-tight">OilTrack</span>
+          <span className="text-xl font-bold text-[#131b2e] tracking-tight">Dashboard</span>
         </div>
         <div className="relative" ref={profileRef}>
           <button
@@ -406,7 +420,7 @@ export function Dashboard() {
         </div>
       </header>
 
-      <main className="px-5 pt-5 space-y-6 max-w-2xl mx-auto">
+      <main className="px-5 lg:px-8 pt-5 space-y-6">
         {/* Greeting */}
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-[#131b2e] break-words">
@@ -416,7 +430,7 @@ export function Dashboard() {
         </div>
 
         {/* KPI Grid */}
-        <section className="grid grid-cols-2 gap-3">
+        <section className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
           <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)] flex flex-col justify-between min-h-[110px] overflow-hidden">
             <div className="flex items-start justify-between">
               <span className="text-[10px] font-bold tracking-widest uppercase text-[#434655]">{thisYear} Revenue</span>
@@ -463,6 +477,22 @@ export function Dashboard() {
             </div>
           </div>
 
+          {/* Monthly Profit */}
+          <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)] flex flex-col justify-between min-h-[110px] overflow-hidden">
+            <div className="flex items-start justify-between">
+              <span className="text-[10px] font-bold tracking-widest uppercase text-[#434655]">{monthName} Profit</span>
+              <TrendingUp className="h-5 w-5 text-[#059669] flex-shrink-0" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xl font-extrabold tracking-tight text-[#059669] truncate">
+                ₹{monthlyProfit.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </div>
+              <p className="text-[10px] text-[#737686] mt-1">
+                {monthlyRevenue > 0 ? `${Math.round((monthlyProfit / monthlyRevenue) * 100)}% margin` : "No sales yet"}
+              </p>
+            </div>
+          </div>
+
           {/* Monthly Liters Sold */}
           <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)] flex flex-col justify-between min-h-[110px] overflow-hidden">
             <div className="flex items-start justify-between">
@@ -495,22 +525,13 @@ export function Dashboard() {
             </div>
           </Link>
 
-          <Link
-            to="/inventory"
-            className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)] flex flex-col justify-between min-h-[110px] hover:shadow-[0_6px_20px_rgba(0,74,198,0.1)] transition-shadow"
-          >
-            <div className="flex items-start justify-between">
-              <span className="text-[10px] font-bold tracking-widest uppercase text-[#ba1a1a]">Alerts</span>
-              <AlertTriangle className="h-5 w-5 text-[#ba1a1a]" fill="currentColor" />
-            </div>
-            <div>
-              <div className="text-3xl font-extrabold tracking-tight text-[#131b2e]">{lowStockItems.length}</div>
-              <p className="text-[10px] text-[#434655] mt-1">
-                {lowStockItems.length === 0 ? "All stocked up" : "Low / critical items"}
-              </p>
-            </div>
-          </Link>
         </section>
+
+        {/* Desktop 2-col layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Left column: orders + inactive customers */}
+        <div className="space-y-6">
 
         {/* Recent Orders */}
         {recentOrders.length > 0 && (
@@ -567,6 +588,82 @@ export function Dashboard() {
           </section>
         )}
 
+        {/* Lost Customers */}
+        <section className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4">
+              <button
+                onClick={() => setShowInactiveCustomers((v) => !v)}
+                className="flex items-center gap-2 flex-1 min-w-0"
+              >
+                <UserX className="h-4 w-4 text-[#ba1a1a] flex-shrink-0" />
+                <h2 className="text-base font-bold text-[#131b2e] tracking-tight">Inactive Customers</h2>
+                <span className="text-xs font-semibold text-[#ba1a1a] bg-red-50 px-2 py-0.5 rounded-full">
+                  {lostCustomers.length}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-[#737686] ml-2 transition-transform duration-200 ${showInactiveCustomers ? "rotate-180" : ""}`} />
+              </button>
+              <div className="flex items-center gap-0.5 rounded-xl px-1 py-1 ml-2 flex-shrink-0">
+                <button
+                  onClick={() => setInactiveMonths((m) => Math.max(1, m - 1))}
+                  className="p-1 rounded-lg hover:bg-[#e2e7ff] transition-colors active:scale-95"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 text-[#434655]" />
+                </button>
+                <span className="text-xs font-bold text-[#131b2e] w-12 text-center">{inactiveMonths}</span>
+                <button
+                  onClick={() => setInactiveMonths((m) => Math.min(36, m + 1))}
+                  className="p-1 rounded-lg hover:bg-[#e2e7ff] transition-colors active:scale-95"
+                >
+                  <ChevronRight className="h-3.5 w-3.5 text-[#434655]" />
+                </button>
+              </div>
+            </div>
+
+            {showInactiveCustomers && (
+              <>
+                <div className="px-5 pb-3 pt-0">
+                  <p className="text-xs text-[#737686]">No orders in the last {inactiveMonths} months</p>
+                </div>
+                <div className="border-t border-[#f2f3ff]">
+                  {lostCustomers.length === 0 && (
+                    <p className="text-sm text-[#737686] text-center py-6">All customers are active within the last {inactiveMonths} months.</p>
+                  )}
+                  {lostCustomers.map((c, i) => (
+                    <Link
+                      key={c.customerId}
+                      to={`/customers/${c.customerId}`}
+                      className={`flex items-center justify-between px-4 py-3.5 hover:bg-[#f2f3ff] transition-colors ${
+                        i < lostCustomers.length - 1 ? "border-b border-[#f2f3ff]" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-bold text-[#ba1a1a]">
+                            {c.customerName[0]?.toUpperCase() ?? "?"}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[#131b2e] truncate">{c.customerName}</p>
+                          <p className="text-xs text-[#737686]">
+                            Last order: {c.lastOrderDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-[#ba1a1a] bg-red-50 px-2 py-1 rounded-full flex-shrink-0 ml-2">
+                        {c.monthsAgo}mo ago
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+
+        </div>{/* end left column */}
+
+        {/* Right column: charts */}
+        <div className="space-y-6">
+
         {/* Monthly Chart with dropdown */}
         <section className="bg-white rounded-2xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
           <div className="flex items-center justify-between mb-5">
@@ -616,7 +713,6 @@ export function Dashboard() {
               </div>
             </div>
           </div>
-          
           {chartData.every((d) => d.value === 0) ? (
             <div className="h-[220px] flex items-center justify-center">
               <p className="text-sm text-[#737686]">No data available for {chartYear}</p>
@@ -708,76 +804,8 @@ export function Dashboard() {
           )}
         </section>
 
-        {/* Lost Customers */}
-        <section className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4">
-              <button
-                onClick={() => setShowInactiveCustomers((v) => !v)}
-                className="flex items-center gap-2 flex-1 min-w-0"
-              >
-                <UserX className="h-4 w-4 text-[#ba1a1a] flex-shrink-0" />
-                <h2 className="text-base font-bold text-[#131b2e] tracking-tight">Inactive Customers</h2>
-                <span className="text-xs font-semibold text-[#ba1a1a] bg-red-50 px-2 py-0.5 rounded-full">
-                  {lostCustomers.length}
-                </span>
-                <ChevronDown className={`h-4 w-4 text-[#737686] ml-2 transition-transform duration-200 ${showInactiveCustomers ? "rotate-180" : ""}`} />
-              </button>
-              <div className="flex items-center gap-0.5 rounded-xl px-1 py-1 ml-2 flex-shrink-0">
-                <button
-                  onClick={() => setInactiveMonths((m) => Math.max(1, m - 1))}
-                  className="p-1 rounded-lg hover:bg-[#e2e7ff] transition-colors active:scale-95"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5 text-[#434655]" />
-                </button>
-                <span className="text-xs font-bold text-[#131b2e] w-12 text-center">{inactiveMonths}</span>
-                <button
-                  onClick={() => setInactiveMonths((m) => Math.min(36, m + 1))}
-                  className="p-1 rounded-lg hover:bg-[#e2e7ff] transition-colors active:scale-95"
-                >
-                  <ChevronRight className="h-3.5 w-3.5 text-[#434655]" />
-                </button>
-              </div>
-            </div>
-
-            {showInactiveCustomers && (
-              <>
-                <div className="px-5 pb-3 pt-0">
-                  <p className="text-xs text-[#737686]">No orders in the last {inactiveMonths} months</p>
-                </div>
-                <div className="border-t border-[#f2f3ff]">
-                  {lostCustomers.length === 0 && (
-                    <p className="text-sm text-[#737686] text-center py-6">All customers are active within the last {inactiveMonths} months.</p>
-                  )}
-                  {lostCustomers.map((c, i) => (
-                    <Link
-                      key={c.customerId}
-                      to={`/customers/${c.customerId}`}
-                      className={`flex items-center justify-between px-4 py-3.5 hover:bg-[#f2f3ff] transition-colors ${
-                        i < lostCustomers.length - 1 ? "border-b border-[#f2f3ff]" : ""
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-[#ba1a1a]">
-                            {c.customerName[0]?.toUpperCase() ?? "?"}
-                          </span>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-[#131b2e] truncate">{c.customerName}</p>
-                          <p className="text-xs text-[#737686]">
-                            Last order: {c.lastOrderDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-xs font-bold text-[#ba1a1a] bg-red-50 px-2 py-1 rounded-full flex-shrink-0 ml-2">
-                        {c.monthsAgo}mo ago
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </>
-            )}
-          </section>
+        </div>{/* end right column */}
+        </div>{/* end 2-col grid */}
       </main>
     </div>
   );

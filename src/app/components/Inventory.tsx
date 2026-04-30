@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
-import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, /* TrendingUp, TrendingDown, Minus as MinusIcon, */ ChevronDown, Search, Trash2, Send, ChevronRight } from "lucide-react";
+import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, /* TrendingUp, TrendingDown, Minus as MinusIcon, */ ChevronDown, Search, Trash2, Send, ChevronRight, Table2, List } from "lucide-react";
 import { Link } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import type { Product } from "../../lib/types";
 import React from "react";
 
 type FilterOption = "all" | "low" | "in" | "out";
+type ViewMode = "list" | "table";
 
 export function Inventory() {
   const isOnline = useOnlineStatus();
@@ -32,6 +33,9 @@ export function Inventory() {
   const [alertExpanded, setAlertExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<FilterOption>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    typeof window !== "undefined" && window.innerWidth >= 1024 ? "table" : "list"
+  );
 
   // Restock sheet
   interface RestockItem { tempId: string; name: string; quantity: number; unit: string; }
@@ -267,20 +271,21 @@ export function Inventory() {
         {/* Header */}
         <div className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
           <div className="h-6 w-24 bg-[#e2e7ff] rounded-full" />
-          <div className="h-9 w-9 bg-[#e2e7ff] rounded-xl" />
+          {/* Desktop search */}
+          <div className="hidden lg:block h-9 w-64 bg-[#e2e7ff] rounded-xl flex-1 mx-6" />
+          <div className="h-9 w-9 lg:w-32 bg-[#e2e7ff] rounded-xl ml-auto" />
         </div>
-        <div className="px-5 max-w-2xl mx-auto">
-          {/* Search bar */}
-          <div className="h-11 w-full bg-[#e2e7ff] rounded-xl mt-4" />
-          {/* Filter chips */}
-          <div className="flex gap-2 mt-3">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-8 w-20 bg-[#e2e7ff] rounded-full" />
-            ))}
+        <div className="px-5 lg:px-8">
+          {/* Mobile search bar */}
+          <div className="h-11 w-full bg-[#e2e7ff] rounded-xl mt-4 lg:hidden" />
+          {/* Toolbar: filter dropdown + view toggle */}
+          <div className="flex items-center gap-2 mt-3">
+            <div className="h-7 w-24 bg-[#e2e7ff] rounded-full" />
+            <div className="h-8 w-20 bg-[#e2e7ff] rounded-xl" />
           </div>
           {/* Product cards */}
-          <div className="mt-5 space-y-4">
-            {[...Array(3)].map((_, i) => (
+          <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(min(400px,100%),1fr))] gap-4">
+            {[...Array(6)].map((_, i) => (
               <div key={i} className="bg-white rounded-xl p-5 shadow-[0_4px_16px_rgba(0,74,198,0.05)]">
                 {/* Card header */}
                 <div className="flex items-start justify-between mb-4">
@@ -331,9 +336,19 @@ export function Inventory() {
     <>
     <div className="min-h-screen bg-[#faf8ff] pb-32">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#faf8ff] flex items-center justify-between px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
-        <h1 className="text-xl font-bold text-[#131b2e] tracking-tight">Inventory</h1>
-        <div className="flex items-center gap-2">
+      <header className="sticky top-0 z-50 bg-[#faf8ff] flex items-center gap-3 px-5 py-4 shadow-[0_1px_0_#c3c6d7]">
+        <h1 className="text-xl font-bold text-[#131b2e] tracking-tight flex-shrink-0">Inventory</h1>
+        <div className="hidden lg:flex relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#737686]" />
+          <input
+            type="text"
+            placeholder="Search products..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 rounded-xl bg-white border border-[#c3c6d7] text-[#131b2e] placeholder-[#737686] text-sm focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb]"
+          />
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
           {ai_price_update && (
             <div className="relative group">
               <button
@@ -349,7 +364,7 @@ export function Inventory() {
                 ) : (
                   <ImageUp className="h-4 w-4" />
                 )}
-                {analyzing ? "Analysing…" : "Update Prices"}
+                <span className="hidden sm:inline">{analyzing ? "Analysing…" : "Update Prices"}</span>
               </button>
               <div className="absolute top-full mt-2 right-0 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 w-52 text-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
                 <div className="absolute bottom-full right-4 border-4 border-transparent border-b-[#131b2e]" />
@@ -364,7 +379,7 @@ export function Inventory() {
                 className="flex items-center gap-1.5 bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
               >
                 <Send className="h-4 w-4" />
-                Restock
+                <span className="hidden sm:inline">Restock</span>
               </button>
               <div className="absolute top-full mt-2 right-0 bg-[#131b2e] text-white text-xs rounded-xl px-3 py-2 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg">
                 <div className="absolute bottom-full right-4 border-4 border-transparent border-b-[#131b2e]" />
@@ -374,17 +389,18 @@ export function Inventory() {
           )}
           <Link
             to="/inventory/new"
-            className="flex items-center justify-center bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
+            className="flex items-center gap-1.5 bg-[#004ac6] hover:bg-[#003ea8] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors active:scale-95"
           >
             <Plus className="h-4 w-4" />
+            <span className="hidden lg:inline">Add Product</span>
           </Link>
         </div>
         <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={handleImageUpload} />
       </header>
 
-      <div className="px-5 max-w-2xl mx-auto">
-        {/* Search Bar */}
-        <div className="relative mt-4">
+      <div className="px-5 lg:px-8 max-w-2xl mx-auto lg:max-w-none">
+        {/* Search Bar — mobile only (desktop search is in the header) */}
+        <div className="relative mt-4 lg:hidden max-w-full">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[#737686]" />
           <input
             value={searchQuery}
@@ -394,24 +410,36 @@ export function Inventory() {
           />
         </div>
 
-        {/* Filter Chips */}
-        <div className="flex items-center gap-2 mt-3 overflow-x-auto pb-1 no-scrollbar">
-          {filterOptions.map((opt) => (
+        {/* Filter dropdown + view toggle */}
+        <div className="flex flex-wrap items-center gap-2 mt-4">
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as FilterOption)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border outline-none cursor-pointer transition-colors ${
+              filter !== "all"
+                ? "bg-[#004ac6] text-white border-[#004ac6]"
+                : "bg-white text-[#434655] border-[#c3c6d7]"
+            }`}
+          >
+            <option value="all">Stock</option>
+            <option value="low">Low Stock{lowStockProducts.length > 0 ? ` (${lowStockProducts.length})` : ""}</option>
+            <option value="in">In Stock</option>
+            <option value="out">Out of Stock</option>
+          </select>
+          <div className="flex items-center bg-white border border-[#c3c6d7] rounded-xl p-0.5">
             <button
-              key={opt.value}
-              onClick={() => setFilter(opt.value)}
-              className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
-                filter === opt.value
-                  ? "bg-[#004ac6] text-white"
-                  : "bg-white text-[#434655] hover:bg-[#f2f3ff] border border-[#c3c6d7]"
-              }`}
+              onClick={() => setViewMode("list")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${viewMode === "list" ? "bg-[#eaedff] text-[#004ac6]" : "text-[#737686] hover:text-[#434655]"}`}
             >
-              {opt.label}
-              {opt.value === "low" && lowStockProducts.length > 0 && (
-                <span className={`ml-1.5 w-1.5 h-1.5 rounded-full inline-block ${filter === "low" ? "bg-orange-300" : "bg-[#ba1a1a]"}`} />
-              )}
+              <List className="h-3.5 w-3.5" /> List
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode("table")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${viewMode === "table" ? "bg-[#eaedff] text-[#004ac6]" : "text-[#737686] hover:text-[#434655]"}`}
+            >
+              <Table2 className="h-3.5 w-3.5" /> Table
+            </button>
+          </div>
         </div>
 
         {/* Low Stock Alert Banner */}
@@ -439,8 +467,83 @@ export function Inventory() {
           </div>
         )}
 
-        {/* Product Cards */}
-        <div className="mt-5 space-y-4 mb-8">
+        {/* Product List / Table */}
+        {viewMode === "table" ? (
+          <div className="mt-5 mb-8 bg-white rounded-2xl border border-[#eaedff] shadow-[0_4px_16px_rgba(0,74,198,0.05)] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#f2f3ff] text-[11px] uppercase tracking-wider font-bold text-[#737686] border-b border-[#c3c6d7]">
+                    <th className="text-left px-5 py-3">Product</th>
+                    <th className="text-left px-4 py-3">Unit Size</th>
+                    <th className="text-right px-4 py-3">Stock</th>
+                    <th className="text-right px-4 py-3">Reorder At</th>
+                    <th className="text-left px-4 py-3">Status</th>
+                    <th className="text-right px-5 py-3 w-[140px]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#eaedff]">
+                  {filteredProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-12 text-center text-[#434655]">
+                        <Package className="h-10 w-10 mx-auto mb-3 text-[#c3c6d7]" />
+                        <p className="font-medium">No products found</p>
+                      </td>
+                    </tr>
+                  ) : filteredProducts.map((product) => {
+                    const s = getStockStatus(product.stock, product.lowStockThreshold);
+                    const badgeStyle = s.level === "critical" ? "bg-[#ffdad6] text-[#93000a]" : s.level === "low" ? "bg-[#ffdbcd] text-[#7d2d00]" : "bg-[#acbfff] text-[#394c84]";
+                    const badgeLabel = s.level === "critical" ? "Critical" : s.level === "low" ? "Low Stock" : "In Stock";
+                    const accentColor = s.level === "critical" ? "#ba1a1a" : s.level === "low" ? "#943700" : "#004ac6";
+                    return (
+                      <tr key={product.id} className="group hover:bg-[#f2f3ff]/50 transition-colors">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: accentColor }} />
+                            <div>
+                              <div className="font-bold text-[#131b2e]">{product.name}</div>
+                              <div className="text-[11px] text-[#737686]">{product.unit}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-[#434655] tabular-nums">{product.unitSize} L / unit</td>
+                        <td className="px-4 py-3 text-right font-extrabold text-[#131b2e] tabular-nums text-base">{product.stock.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right text-[#434655] tabular-nums">{product.lowStockThreshold}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${badgeStyle}`}>
+                            {badgeLabel}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Link
+                              to={`/inventory/${product.id}`}
+                              className="p-1.5 rounded-lg text-[#737686] hover:text-[#004ac6] hover:bg-[#eaedff] transition-colors"
+                              title="View batches"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Link>
+                            <button
+                              onClick={() => handleDelete(product.id, product.name)}
+                              className="p-1.5 rounded-lg text-[#737686] hover:text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3 border-t border-[#eaedff] text-xs text-[#737686] bg-[#f2f3ff]/50">
+              Showing <strong className="text-[#131b2e]">{filteredProducts.length}</strong> of <strong className="text-[#131b2e]">{products.length}</strong> products
+            </div>
+          </div>
+        ) : (
+        <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(min(400px,100%),1fr))] gap-4 mb-8">
           {filteredProducts.length === 0 ? (
             <div className="text-center py-12 text-[#434655]">
               <Package className="h-10 w-10 mx-auto mb-3 text-[#c3c6d7]" />
@@ -470,7 +573,7 @@ export function Inventory() {
                       </div>
                       <div>
                         <h3 className="font-bold text-[#131b2e] text-base leading-tight">{product.name}</h3>
-                        <p className="text-xs text-[#737686] mt-0.5">{product.unit} · {product.unitSize} lt/unit</p>
+                        <p className="text-xs text-[#737686] mt-0.5">{product.unitSize} L/unit</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -527,6 +630,7 @@ export function Inventory() {
             })
           )}
         </div>
+        )}
       </div>
 
       {/* Stock Update Modal */}
@@ -542,7 +646,7 @@ export function Inventory() {
             <div className="p-5 overflow-y-auto flex-1">
               <label htmlFor="amount-input" className="block mb-2 text-sm font-semibold text-[#131b2e]">
                 {modalData.action === "unitSize" ? "Container size in litres:"
-                  : `Reorder when stock falls below (${modalData.unit.toLowerCase()}):`}
+                  : "Reorder when stock falls below (bottles):"}
               </label>
               <input
                 id="amount-input"

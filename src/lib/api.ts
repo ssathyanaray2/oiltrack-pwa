@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from "./supabase";
-import type { Product, Customer, Order, OrderItem, ProductBatch } from "./types";
+import type { Product, Customer, Order, OrderItem, ProductBatch, Tag } from "./types";
 import type { FeatureFlags } from "./featureFlags";
 import { defaultFlags } from "./featureFlags";
 import { generateBatchNumber } from "./utils";
@@ -46,7 +46,8 @@ function mapCustomer(row: Record<string, unknown>): Customer {
 function mapOrder(
   orderRow: Record<string, unknown>,
   itemRows: Record<string, unknown>[],
-  customerName: string
+  customerName: string,
+  tags: Tag[] = []
 ): Order {
   const firstItem = itemRows[0] ?? null;
   return {
@@ -60,7 +61,12 @@ function mapOrder(
     status: (orderRow.status as Order["status"]) ?? "Pending",
     paymentStatus: (orderRow.payment_status as Order["paymentStatus"]) ?? "Unpaid",
     paymentMethod: (orderRow.payment_method as Order["paymentMethod"]) ?? undefined,
+    amountPaid: orderRow.amount_paid != null ? Number(orderRow.amount_paid) : undefined,
+    deliveryDate: orderRow.delivery_date != null ? String(orderRow.delivery_date) : undefined,
+    deliveryCharge: orderRow.delivery_charge != null ? Number(orderRow.delivery_charge) : undefined,
     notes: orderRow.notes != null ? String(orderRow.notes) : undefined,
+    receiptNumber: orderRow.receipt_number != null ? Number(orderRow.receipt_number) : undefined,
+    tags,
     items: itemRows.map((item) => ({
       productId: String(item.product_id),
       quantity: Number(item.quantity),
@@ -253,9 +259,21 @@ export async function getOrdersPaginated(
     itemsByOrder.get(item.order_id)!.push(item);
   }
 
+  // Fetch tags for these orders
+  const { data: orderTagsData } = await supabase
+    .from("order_tags")
+    .select("order_id, tags(id, name, color)")
+    .in("order_id", orderIds);
+  const tagsByOrder = new Map<string, Tag[]>();
+  for (const ot of orderTagsData ?? []) {
+    if (!tagsByOrder.has(ot.order_id)) tagsByOrder.set(ot.order_id, []);
+    const tag = (ot as any).tags;
+    if (tag) tagsByOrder.get(ot.order_id)!.push({ id: tag.id, name: tag.name, color: tag.color });
+  }
+
   const orders = ordersData.map((o) => {
     const customerName = o.customer_name ?? customerMap.get(o.customer_id) ?? "";
-    return mapOrder(o, itemsByOrder.get(o.id) ?? [], customerName);
+    return mapOrder(o, itemsByOrder.get(o.id) ?? [], customerName, tagsByOrder.get(o.id) ?? []);
   });
 
   return { orders, hasMore: ordersData.length === PAGE_SIZE };
@@ -426,8 +444,11 @@ export async function createOrder(order: {
   status: Order["status"];
   paymentStatus: Order["paymentStatus"];
   paymentMethod?: Order["paymentMethod"];
+  amountPaid?: number;
+  deliveryDate?: string;
+  deliveryCharge?: number;
   notes?: string;
-  items?: Array<{ productId: string; quantity: number; batchId?: string }>;
+  items?: Array<{ productId: string; quantity: number; batchId?: string; unitPrice?: number }>;
 }): Promise<Order> {
   if (!supabase) throw new Error("Supabase not configured");
 
@@ -466,6 +487,9 @@ export async function createOrder(order: {
   };
   if (order.paymentStatus != null) orderPayload.payment_status = order.paymentStatus;
   orderPayload.payment_method = order.paymentMethod ?? null;
+  orderPayload.amount_paid = order.amountPaid ?? 0;
+  orderPayload.delivery_date = order.deliveryDate ?? null;
+  orderPayload.delivery_charge = order.deliveryCharge ?? 0;
 
   const { data: orderRow, error: orderError } = await supabase
     .from("orders")
@@ -481,7 +505,7 @@ export async function createOrder(order: {
       product_id: item.productId,
       product_name: productNameMap.get(item.productId) ?? "",
       quantity: item.quantity,
-      unit_price: b?.unitPrice ?? 0,
+      unit_price: item.unitPrice ?? b?.unitPrice ?? 0,
       cost_price: b?.costPrice ?? 0,
       batch_id: item.batchId ?? null,
     });
@@ -516,8 +540,11 @@ export async function updateOrder(
     status?: Order["status"];
     paymentStatus?: Order["paymentStatus"];
     paymentMethod?: Order["paymentMethod"] | null;
+    amountPaid?: number;
+    deliveryDate?: string | null;
+    deliveryCharge?: number;
     notes?: string;
-    items?: Array<{ productId: string; quantity: number; batchId?: string }>;
+    items?: Array<{ productId: string; quantity: number; batchId?: string; unitPrice?: number }>;
   }
 ): Promise<Order> {
   if (!supabase) throw new Error("Supabase not configured");
@@ -530,6 +557,9 @@ export async function updateOrder(
   if (input.status !== undefined) orderPayload.status = input.status;
   if (input.paymentStatus !== undefined) orderPayload.payment_status = input.paymentStatus;
   if (input.paymentMethod !== undefined) orderPayload.payment_method = input.paymentMethod ?? null;
+  if (input.amountPaid !== undefined) orderPayload.amount_paid = input.amountPaid;
+  if (input.deliveryDate !== undefined) orderPayload.delivery_date = input.deliveryDate ?? null;
+  if (input.deliveryCharge !== undefined) orderPayload.delivery_charge = input.deliveryCharge;
   if (input.notes !== undefined) orderPayload.notes = input.notes;
   if (input.customerId !== undefined) orderPayload.customer_id = input.customerId;
   if (input.customerName !== undefined) orderPayload.customer_name = input.customerName;
@@ -566,7 +596,7 @@ export async function updateOrder(
     }
     orderPayload.total_amount = newItems.reduce((sum, item) => {
       const b = item.batchId ? newBatchMap.get(item.batchId) : null;
-      return sum + item.quantity * (b?.unitPrice ?? 0);
+      return sum + item.quantity * (item.unitPrice ?? b?.unitPrice ?? 0);
     }, 0);
 
     // Replace all order items
@@ -578,7 +608,7 @@ export async function updateOrder(
         product_id: item.productId,
         product_name: productNameMap.get(item.productId) ?? "",
         quantity: item.quantity,
-        unit_price: b?.unitPrice ?? 0,
+        unit_price: item.unitPrice ?? b?.unitPrice ?? 0,
         cost_price: b?.costPrice ?? 0,
         batch_id: item.batchId ?? null,
       });
@@ -871,5 +901,109 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
   }
 
   return data as FeatureFlags;
+}
+
+// ——— Tags ———
+
+export async function getTags(): Promise<Tag[]> {
+  if (!isSupabaseConfigured() || !supabase) return [];
+  const { data, error } = await supabase.from("tags").select("*").order("name");
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ id: String(r.id), name: String(r.name), color: String(r.color) }));
+}
+
+export async function createTag(name: string, color: string): Promise<Tag> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const userId = await getCurrentUserId();
+  const { data, error } = await supabase.from("tags").insert({ name: name.trim(), color, user_id: userId }).select().single();
+  if (error) throw error;
+  return { id: String(data.id), name: String(data.name), color: String(data.color) };
+}
+
+export async function deleteTag(id: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { error } = await supabase.from("tags").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function assignTagToOrder(orderId: string, tagId: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { error } = await supabase.from("order_tags").insert({ order_id: orderId, tag_id: tagId });
+  if (error && !error.message.includes("duplicate")) throw error;
+}
+
+export async function removeTagFromOrder(orderId: string, tagId: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { error } = await supabase.from("order_tags").delete().eq("order_id", orderId).eq("tag_id", tagId);
+  if (error) throw error;
+}
+
+export async function getTagsForOrder(orderId: string): Promise<Tag[]> {
+  if (!isSupabaseConfigured() || !supabase) return [];
+  const { data, error } = await supabase
+    .from("order_tags")
+    .select("tags(id, name, color)")
+    .eq("order_id", orderId);
+  if (error) throw error;
+  return (data ?? []).map((r) => {
+    const t = (r as any).tags;
+    return { id: String(t.id), name: String(t.name), color: String(t.color) };
+  });
+}
+
+// ——— Receipts ———
+
+export async function getNextReceiptNumber(orderDate: string): Promise<number> {
+  if (!isSupabaseConfigured() || !supabase) return 1;
+  const { getFYDateRange } = await import("./receiptGenerator");
+  const { start, end } = getFYDateRange(orderDate);
+  const { data } = await supabase
+    .from("orders")
+    .select("receipt_number")
+    .not("receipt_number", "is", null)
+    .gte("order_date", start)
+    .lte("order_date", end)
+    .order("receipt_number", { ascending: false })
+    .limit(1);
+  return ((data?.[0]?.receipt_number as number) ?? 0) + 1;
+}
+
+export async function saveReceiptNumber(orderId: string, receiptNumber: number): Promise<void> {
+  if (!isSupabaseConfigured() || !supabase) return;
+  await supabase.from("orders").update({ receipt_number: receiptNumber }).eq("id", orderId);
+}
+
+export async function receiptExists(orderId: string): Promise<boolean> {
+  if (!isSupabaseConfigured() || !supabase) return false;
+  const userId = await getCurrentUserId();
+  const { data } = await supabase.storage
+    .from("receipts")
+    .list(userId, { search: `${orderId}.pdf` });
+  return (data ?? []).some((f) => f.name === `${orderId}.pdf`);
+}
+
+export async function uploadReceipt(orderId: string, pdfBlob: Blob, receiptNumber?: number): Promise<void> {
+  if (!isSupabaseConfigured() || !supabase) return;
+  const userId = await getCurrentUserId();
+  const path = `${userId}/${orderId}.pdf`;
+  const { error } = await supabase.storage
+    .from("receipts")
+    .upload(path, pdfBlob, { contentType: "application/pdf", upsert: true });
+  if (error) throw error;
+  // Save receipt number atomically with the upload so they're never out of sync
+  if (receiptNumber !== undefined) {
+    await supabase.from("orders").update({ receipt_number: receiptNumber }).eq("id", orderId);
+  }
+}
+
+export async function getReceiptDownloadUrl(orderId: string): Promise<string | null> {
+  if (!isSupabaseConfigured() || !supabase) return null;
+  const userId = await getCurrentUserId();
+  const path = `${userId}/${orderId}.pdf`;
+  const { data, error } = await supabase.storage
+    .from("receipts")
+    .createSignedUrl(path, 3600); // 1 hour expiry
+  if (error) return null;
+  return data.signedUrl;
 }
 

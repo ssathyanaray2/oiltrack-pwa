@@ -19,6 +19,8 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
+  List,
+  Table2,
 } from "lucide-react";
 import { ConfirmModal } from "./ConfirmModal";
 import { toast } from "sonner";
@@ -82,6 +84,9 @@ export function ProductDetail() {
 
   // Delete confirmation
   const [deletingBatch, setDeletingBatch] = useState<ProductBatch | null>(null);
+  const [batchViewMode, setBatchViewMode] = useState<"list" | "table">(() =>
+    typeof window !== "undefined" && window.innerWidth >= 1024 ? "table" : "list"
+  );
 
   // ── Load data ───────────────────────────────────────────────────────────────
   const loadData = async (silent = false) => {
@@ -225,7 +230,7 @@ export function ProductDetail() {
           </button>
           <span className="text-base font-bold text-[#131b2e]">Product</span>
         </div>
-        <div className="p-4 pb-24 max-w-2xl mx-auto">
+        <div className="p-4 pb-24 max-w-2xl mx-auto lg:max-w-none">
           <p className="text-[#737686] text-sm mt-6">Loading…</p>
         </div>
       </div>
@@ -242,7 +247,7 @@ export function ProductDetail() {
           </button>
           <span className="text-base font-bold text-[#131b2e]">Product</span>
         </div>
-        <div className="p-4 pb-24 max-w-2xl mx-auto flex flex-col items-center justify-center py-16 text-center">
+        <div className="p-4 pb-24 max-w-2xl mx-auto lg:max-w-none flex flex-col items-center justify-center py-16 text-center">
           <div className="bg-[#eaedff] rounded-full p-4 mb-3">
             <Package className="h-8 w-8 text-[#004ac6]" />
           </div>
@@ -277,7 +282,7 @@ export function ProductDetail() {
         </button>
       </div>
 
-      <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
+      <div className="p-4 pb-24 max-w-2xl mx-auto lg:max-w-none space-y-4">
         {/* Product Summary Card */}
         <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] p-5">
           <div className="flex items-center gap-4 mb-4">
@@ -286,7 +291,7 @@ export function ProductDetail() {
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold text-[#131b2e] truncate">{product.name}</h2>
-              <p className="text-xs text-[#737686] mt-0.5">{product.unit} · {product.unitSize} L/bottle</p>
+              <p className="text-xs text-[#737686] mt-0.5">{product.unitSize} L/bottle</p>
             </div>
             {stockBadge && (
               <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${stockBadge.className}`}>
@@ -294,11 +299,11 @@ export function ProductDetail() {
               </span>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <div className="bg-[#f8f9ff] rounded-xl p-3">
               <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Total Stock</p>
               <p className="text-xl font-extrabold text-[#131b2e]">{product.stock.toLocaleString()}</p>
-              <p className="text-xs text-[#737686]">{product.unit}</p>
+              <p className="text-xs text-[#737686]">bottles</p>
             </div>
             <div className="bg-[#f8f9ff] rounded-xl p-3">
               <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Container</p>
@@ -306,22 +311,45 @@ export function ProductDetail() {
               <p className="text-xs text-[#737686]">L / bottle</p>
             </div>
             <div className="bg-[#f8f9ff] rounded-xl p-3">
+              <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Total Quantity</p>
+              <p className="text-xl font-extrabold text-[#131b2e]">{product.stock * product.unitSize}</p>
+              <p className="text-xs text-[#737686]">L</p>
+            </div>
+            <div className="bg-[#f8f9ff] rounded-xl p-3">
               <p className="text-[10px] text-[#737686] uppercase tracking-wider mb-1">Reorder At</p>
               <p className="text-xl font-extrabold text-[#131b2e]">{product.lowStockThreshold.toLocaleString()}</p>
-              <p className="text-xs text-[#737686]">{product.unit}</p>
+              <p className="text-xs text-[#737686]">bottles</p>
             </div>
           </div>
           {product.stock < product.lowStockThreshold && (
             <div className="mt-3 flex items-center gap-2 text-orange-700 bg-orange-50 rounded-xl px-3 py-2">
               <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-              <span className="text-xs font-semibold">Reorder at {product.lowStockThreshold} {product.unit} — stock is low</span>
+              <span className="text-xs font-semibold">Reorder at {product.lowStockThreshold} bottles — stock is low</span>
             </div>
           )}
         </div>
 
         {/* Batch List */}
         <div>
-          <h3 className="text-base font-bold text-[#131b2e] mb-3">Batches ({batches.length})</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-bold text-[#131b2e]">Batches ({batches.length})</h3>
+            {batches.length > 0 && (
+              <div className="flex items-center bg-white border border-[#c3c6d7] rounded-xl p-0.5">
+                <button
+                  onClick={() => setBatchViewMode("list")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${batchViewMode === "list" ? "bg-[#eaedff] text-[#004ac6]" : "text-[#737686] hover:text-[#434655]"}`}
+                >
+                  <List className="h-3.5 w-3.5" /> List
+                </button>
+                <button
+                  onClick={() => setBatchViewMode("table")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${batchViewMode === "table" ? "bg-[#eaedff] text-[#004ac6]" : "text-[#737686] hover:text-[#434655]"}`}
+                >
+                  <Table2 className="h-3.5 w-3.5" /> Table
+                </button>
+              </div>
+            )}
+          </div>
 
           {batches.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
@@ -338,8 +366,66 @@ export function ProductDetail() {
                 Add First Batch
               </button>
             </div>
+          ) : batchViewMode === "table" ? (
+            <div className="bg-white rounded-2xl border border-[#eaedff] shadow-[0_4px_16px_rgba(0,74,198,0.05)] overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-[#f2f3ff] text-[11px] uppercase tracking-wider font-bold text-[#737686] border-b border-[#c3c6d7]">
+                      <th className="text-left px-4 py-3">Batch</th>
+                      <th className="text-right px-4 py-3">Bottles</th>
+                      <th className="text-right px-4 py-3">Volume (L)</th>
+                      <th className="text-right px-4 py-3">Selling</th>
+                      <th className="text-right px-4 py-3">Cost</th>
+                      <th className="text-right px-4 py-3">Margin</th>
+                      <th className="text-left px-4 py-3">Mfg</th>
+                      <th className="text-left px-4 py-3">Expiry</th>
+                      <th className="text-right px-4 py-3 w-[90px]">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#eaedff]">
+                    {batches.map((batch) => {
+                      const expiryBadge = getExpiryBadge(batch.expiryDate);
+                      const totalLitres = batch.numberOfBottles * batch.bottleSizeLitres;
+                      const margin = batch.unitPrice > 0 && batch.costPrice > 0 ? batch.unitPrice - batch.costPrice : null;
+                      return (
+                        <tr key={batch.id} className="group hover:bg-[#f8f9ff] transition-colors">
+                          <td className="px-4 py-3">
+                            <span className="font-mono text-xs font-bold text-[#131b2e]">{batch.batchNumber}</span>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-[#131b2e]">{batch.numberOfBottles}</td>
+                          <td className="px-4 py-3 text-right text-[#434655]">{totalLitres.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-[#131b2e]">₹{batch.unitPrice}</td>
+                          <td className="px-4 py-3 text-right text-[#434655]">{batch.costPrice > 0 ? `₹${batch.costPrice}` : "—"}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-green-700">{margin !== null ? `₹${margin.toFixed(2)}` : "—"}</td>
+                          <td className="px-4 py-3 text-[#434655] text-xs">{batch.manufactureDate ? formatDate(batch.manufactureDate) : "—"}</td>
+                          <td className="px-4 py-3 text-xs">
+                            {expiryBadge ? (
+                              <span className={`px-2 py-0.5 rounded-full font-semibold ${expiryBadge.className}`}>{expiryBadge.label}</span>
+                            ) : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => openEditForm(batch)} className="p-1.5 rounded-lg text-[#737686] hover:text-[#2563eb] hover:bg-[#eaedff] transition-colors">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button onClick={() => setDeletingBatch(batch)} className="p-1.5 rounded-lg text-[#737686] hover:text-[#ba1a1a] hover:bg-[#ffdad6] transition-colors">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 py-3 border-t border-[#eaedff] text-xs text-[#737686] bg-[#f2f3ff]/50">
+                {batches.length} batch{batches.length !== 1 ? "es" : ""}
+              </div>
+            </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(400px,100%),1fr))] gap-3">
               {batches.map((batch) => {
                 const expiryBadge = getExpiryBadge(batch.expiryDate);
                 const totalLitres = batch.numberOfBottles * batch.bottleSizeLitres;
@@ -351,7 +437,6 @@ export function ProductDetail() {
                     style={{ borderLeft: `3px solid ${isExpired ? "#ba1a1a" : "#004ac6"}` }}
                   >
                     <div className="px-4 py-3">
-                      {/* Batch number + expiry badge */}
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <span className="font-mono text-sm font-bold text-[#131b2e]">{batch.batchNumber}</span>
                         {expiryBadge && (
@@ -360,15 +445,11 @@ export function ProductDetail() {
                           </span>
                         )}
                       </div>
-
-                      {/* Bottles — primary stock info */}
                       <div className="flex items-baseline gap-1.5 mb-1">
                         <span className="text-2xl font-extrabold text-[#131b2e]">{batch.numberOfBottles}</span>
                         <span className="text-sm font-medium text-[#434655]">bottles</span>
                         <span className="text-xs text-[#737686] ml-1">· {totalLitres.toLocaleString()} L total</span>
                       </div>
-
-                      {/* Prices */}
                       <div className="flex items-center gap-4 mb-2">
                         <div>
                           <p className="text-[10px] text-[#737686] uppercase tracking-wider">Selling</p>
@@ -383,14 +464,10 @@ export function ProductDetail() {
                         {batch.unitPrice > 0 && batch.costPrice > 0 && (
                           <div className="ml-auto">
                             <p className="text-[10px] text-[#737686] uppercase tracking-wider">Margin</p>
-                            <p className="text-sm font-bold text-green-700">
-                              ₹{(batch.unitPrice - batch.costPrice).toFixed(2)}/bottle
-                            </p>
+                            <p className="text-sm font-bold text-green-700">₹{(batch.unitPrice - batch.costPrice).toFixed(2)}/bottle</p>
                           </div>
                         )}
                       </div>
-
-                      {/* Dates */}
                       <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
                         {batch.manufactureDate && (
                           <div className="flex items-center gap-1 text-[#737686]">
@@ -405,12 +482,7 @@ export function ProductDetail() {
                           </div>
                         )}
                       </div>
-
-                      {batch.notes && (
-                        <p className="text-xs text-[#737686] italic mb-3">{batch.notes}</p>
-                      )}
-
-                      {/* Actions */}
+                      {batch.notes && <p className="text-xs text-[#737686] italic mb-3">{batch.notes}</p>}
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => openEditForm(batch)}

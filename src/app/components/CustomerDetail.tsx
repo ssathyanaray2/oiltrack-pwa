@@ -176,7 +176,7 @@ export function CustomerDetail() {
           </button>
           <span className="text-base font-bold text-[#131b2e]">Customer</span>
         </div>
-        <div className="p-4 pb-24 max-w-2xl mx-auto">
+        <div className="p-4 pb-24 max-w-2xl lg:max-w-4xl mx-auto">
           <p className="text-[#737686] text-sm mt-6">Loading…</p>
         </div>
       </div>
@@ -195,7 +195,7 @@ export function CustomerDetail() {
           </button>
           <span className="text-base font-bold text-[#131b2e]">Customer</span>
         </div>
-        <div className="p-4 pb-24 max-w-2xl mx-auto flex flex-col items-center justify-center py-16 text-center">
+        <div className="p-4 pb-24 max-w-2xl lg:max-w-4xl mx-auto flex flex-col items-center justify-center py-16 text-center">
           <div className="bg-[#eaedff] rounded-full p-4 mb-3">
             <User className="h-8 w-8 text-[#004ac6]" />
           </div>
@@ -256,7 +256,7 @@ export function CustomerDetail() {
         </Link>
       </div>
 
-      <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
+      <div className="p-4 pb-24 max-w-2xl lg:max-w-4xl mx-auto space-y-4">
         {/* Customer Info Card */}
         <div className="bg-white rounded-2xl shadow-[0_4px_16px_rgba(0,74,198,0.06)] p-5">
           {/* Avatar + name */}
@@ -317,6 +317,51 @@ export function CustomerDetail() {
             )}
           </div>
         </div>
+
+        {/* Summary Cards */}
+        {customerOrders.length > 0 && (() => {
+          const activeOrders = customerOrders.filter((o) => o.status !== "Cancelled");
+          const totalBilled = activeOrders.reduce((sum, o) => {
+            const items = o.items?.length ? o.items : [{ productId: o.productId, quantity: o.quantity, unitPrice: 0 }];
+            return sum + items.reduce((s, i) => s + i.quantity * (i.unitPrice ?? 0), 0);
+          }, 0);
+          const totalPaid = activeOrders.reduce((sum, o) => {
+            if (o.paymentStatus === "Paid") {
+              const items = o.items?.length ? o.items : [{ productId: o.productId, quantity: o.quantity, unitPrice: 0 }];
+              return sum + items.reduce((s, i) => s + i.quantity * (i.unitPrice ?? 0), 0);
+            }
+            if (o.paymentStatus === "Partial") return sum + (o.amountPaid ?? 0);
+            return sum;
+          }, 0);
+          const outstanding = Math.max(0, totalBilled - totalPaid);
+          const deliveredCount = customerOrders.filter((o) => o.status === "Delivered" || o.status === "Packed").length;
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+                <p className="text-[10px] font-bold tracking-widest uppercase text-[#737686] mb-1">Total Orders</p>
+                <p className="text-2xl font-extrabold text-[#131b2e]">{customerOrders.length}</p>
+                <p className="text-[10px] text-[#737686] mt-1">{deliveredCount} delivered</p>
+              </div>
+              <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+                <p className="text-[10px] font-bold tracking-widest uppercase text-[#737686] mb-1">Total Billed</p>
+                <p className="text-xl font-extrabold text-[#131b2e] truncate">₹{totalBilled.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
+                <p className="text-[10px] text-[#737686] mt-1">excl. cancelled</p>
+              </div>
+              <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+                <p className="text-[10px] font-bold tracking-widest uppercase text-[#737686] mb-1">Total Paid</p>
+                <p className="text-xl font-extrabold text-[#059669] truncate">₹{totalPaid.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p>
+                <p className="text-[10px] text-[#737686] mt-1">{totalBilled > 0 ? `${Math.round((totalPaid / totalBilled) * 100)}% collected` : ""}</p>
+              </div>
+              <div className="bg-white rounded-2xl p-4 shadow-[0_4px_16px_rgba(0,74,198,0.06)]">
+                <p className="text-[10px] font-bold tracking-widest uppercase text-[#737686] mb-1">Outstanding</p>
+                <p className={`text-xl font-extrabold truncate ${outstanding > 0 ? "text-[#ba1a1a]" : "text-[#059669]"}`}>
+                  {outstanding > 0 ? `₹${outstanding.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "Settled"}
+                </p>
+                <p className="text-[10px] text-[#737686] mt-1">{outstanding > 0 ? "unpaid balance" : "all clear"}</p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Order History */}
         <div>
