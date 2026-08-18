@@ -22,9 +22,8 @@ import {
   removeTagFromOrder,
   getTagsForOrder,
   getNextReceiptNumber,
-  uploadReceipt,
-  getReceiptDownloadUrl,
-  receiptExists,
+  saveReceiptNumber,
+  // uploadReceipt, getReceiptDownloadUrl, receiptExists — disabled to reduce Supabase disk I/O
 } from "../../lib/api";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, getCachedCustomers, getCachedBatches, setCachedProducts, setCachedCustomers } from "../../lib/cache";
@@ -419,24 +418,13 @@ export function OrderForm() {
     if (!existingOrder) return;
     setDownloadingReceipt(true);
     try {
-      const filename = `Receipt_${existingOrder.date}_${existingOrder.customerName.replace(/\s+/g, "_")}.pdf`;
-
-      // Check storage directly — most reliable source of truth
-      const exists = await receiptExists(existingOrder.id);
-      if (exists) {
-        const signedUrl = await getReceiptDownloadUrl(existingOrder.id);
-        if (signedUrl) {
-          window.open(signedUrl, "_blank", "noopener,noreferrer");
-          toast.success("Receipt opened");
-          return;
-        }
-      }
-
-      // Not in storage — generate, upload (+ save receipt number atomically), open
+      // Storage disabled — generate PDF fresh client-side every time
       const { generateReceiptPDF } = await import("../../lib/receiptGenerator");
       const receiptNum = existingOrder.receiptNumber ?? await getNextReceiptNumber(existingOrder.date);
       const pdfBlob = generateReceiptPDF(existingOrder, products, receiptNum);
-      await uploadReceipt(existingOrder.id, pdfBlob, existingOrder.receiptNumber ? undefined : receiptNum);
+      if (!existingOrder.receiptNumber) {
+        await saveReceiptNumber(existingOrder.id, receiptNum);
+      }
       const url = URL.createObjectURL(pdfBlob);
       window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -577,13 +565,11 @@ export function OrderForm() {
         JSON.stringify((existingOrder?.items ?? []).map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice ?? 0 })))
       );
       if (formData.status === "Delivered" && savedOrderId && (statusChangedToDelivered || receiptFieldsChanged)) {
-        const { generateReceiptPDF } = await import("../../lib/receiptGenerator");
+        // Storage disabled — just assign a receipt number; PDF is generated on demand when user downloads
         const savedOrder = await getOrder(savedOrderId!);
-        if (savedOrder) {
-          const receiptNum = savedOrder.receiptNumber ?? await getNextReceiptNumber(savedOrder.date);
-          const pdfBlob = generateReceiptPDF(savedOrder, products, receiptNum);
-          // upsert:true overwrites existing file; only save receipt number if new
-          await uploadReceipt(savedOrderId!, pdfBlob, savedOrder.receiptNumber ? undefined : receiptNum);
+        if (savedOrder && !savedOrder.receiptNumber) {
+          const receiptNum = await getNextReceiptNumber(savedOrder.date);
+          await saveReceiptNumber(savedOrderId!, receiptNum);
         }
       }
 

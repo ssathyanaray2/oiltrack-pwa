@@ -3,7 +3,7 @@ import { useReactTable, getCoreRowModel, getSortedRowModel, flexRender, createCo
 import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
-import { getOrdersPaginated, getProducts, updateOrder, InsufficientStockError, getTags, getNextReceiptNumber, saveReceiptNumber, uploadReceipt, getReceiptDownloadUrl, receiptExists } from "../../lib/api";
+import { getOrdersPaginated, getProducts, updateOrder, InsufficientStockError, getTags, getNextReceiptNumber, saveReceiptNumber/*, uploadReceipt, getReceiptDownloadUrl, receiptExists*/ } from "../../lib/api";
 import { toast } from "sonner";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, setCachedProducts, setCachedOrders } from "../../lib/cache";
@@ -507,35 +507,24 @@ export function Orders() {
   // forceRegenerate=false: serve existing file from storage (manual download button)
   const generateAndSaveReceipt = async (order: Order, forceRegenerate = false) => {
     try {
-      const filename = `Receipt_${order.date}_${order.customerName.replace(/\s+/g, "_")}.pdf`;
-
-      if (!forceRegenerate) {
-        // Manual download — serve existing file if present
-        const exists = await receiptExists(order.id);
-        if (exists) {
-          const signedUrl = await getReceiptDownloadUrl(order.id);
-          if (signedUrl) {
-            window.open(signedUrl, "_blank", "noopener,noreferrer");
-            toast.success("Receipt opened");
-            return;
-          }
-        }
-      }
-
-      // Generate fresh PDF — reuse existing receipt number if already assigned
+      // Storage upload disabled to reduce Supabase disk I/O.
+      // Receipts are generated client-side on demand and never written to storage.
       const { generateReceiptPDF } = await import("../../lib/receiptGenerator");
       const receiptNum = order.receiptNumber ?? await getNextReceiptNumber(order.date);
       const pdfBlob = generateReceiptPDF(order, products, receiptNum);
-      // uploadReceipt uses upsert:true so it overwrites the existing file
-      await uploadReceipt(order.id, pdfBlob, order.receiptNumber ? undefined : receiptNum);
 
-      // Only download if user explicitly requested (forceRegenerate=false means manual download)
+      // Save receipt number to the order if not already assigned (orders table only, no storage)
+      if (!order.receiptNumber) {
+        await saveReceiptNumber(order.id, receiptNum);
+      }
+
+      // Only open if user explicitly requested (forceRegenerate=true = auto-trigger, no open)
       if (!forceRegenerate) {
         const url = URL.createObjectURL(pdfBlob);
         window.open(url, "_blank", "noopener,noreferrer");
         setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast.success("Receipt opened");
       }
-      toast.success("Receipt generated and downloaded");
     } catch (err) {
       console.error(err);
       toast.error("Failed to generate receipt");

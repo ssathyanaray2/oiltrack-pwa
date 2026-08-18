@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from "react-router";
 import { Home, Package, ShoppingCart, Users, WifiOff, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { getFeatureFlags } from "../../lib/api";
+import { getFeatureFlags, invalidateProductsCache, invalidateCustomersCache } from "../../lib/api";
 import { FeatureFlagsContext, defaultFlags, type FeatureFlags } from "../../lib/featureFlags";
 import React from "react";
 
@@ -17,6 +17,19 @@ export function Root() {
     if (!isSupabaseConfigured() || !isOnline) return;
     getFeatureFlags().then(setFlags).catch(console.error);
   }, [isOnline]);
+
+  // When the user returns to this tab after being away, invalidate the
+  // products and customers caches so the next page fetch gets fresh data.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        invalidateProductsCache();
+        invalidateCustomersCache();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
 
   const handleSignOut = async () => {
     if (isSupabaseConfigured() && supabase) {

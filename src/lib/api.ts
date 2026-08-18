@@ -11,6 +11,25 @@ export class InsufficientStockError extends Error {
   }
 }
 
+// ── In-memory session cache ──────────────────────────────────────────────────
+// Avoids redundant Supabase fetches when navigating between pages in the same
+// browser session. Mutations call the matching invalidate function so stale
+// data is never served after a write.
+
+const TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+type CacheEntry<T> = { data: T; ts: number };
+let _productsCache: CacheEntry<Product[]> | null = null;
+let _customersCache: CacheEntry<Customer[]> | null = null;
+let _featureFlagsCache: CacheEntry<FeatureFlags> | null = null;
+
+function isFresh<T>(entry: CacheEntry<T> | null): entry is CacheEntry<T> {
+  return entry !== null && Date.now() - entry.ts < TTL_MS;
+}
+
+export function invalidateProductsCache(): void { _productsCache = null; }
+export function invalidateCustomersCache(): void { _customersCache = null; }
+
 async function getCurrentUserId(): Promise<string> {
   if (!supabase) throw new Error("Supabase not configured");
   const { data: { user } } = await supabase.auth.getUser();
@@ -89,10 +108,13 @@ function mapOrderItem(row: Record<string, unknown>): OrderItem {
 // ——— Products ———
 
 export async function getProducts(): Promise<Product[]> {
+  if (isFresh(_productsCache)) return _productsCache.data;
   if (!isSupabaseConfigured() || !supabase) return [];
   const { data, error } = await supabase.from("products").select("*").order("name");
   if (error) throw error;
-  return (data ?? []).map(mapProduct);
+  const result = (data ?? []).map(mapProduct);
+  _productsCache = { data: result, ts: Date.now() };
+  return result;
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
@@ -106,6 +128,7 @@ export async function getProduct(id: string): Promise<Product | null> {
 }
 
 export async function createProduct(input: Omit<Product, "id" | "stock">): Promise<Product> {
+  invalidateProductsCache();
   if (!supabase) throw new Error("Supabase not configured");
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
@@ -128,6 +151,7 @@ export async function updateProduct(
   id: string,
   input: Partial<Omit<Product, "id">>
 ): Promise<Product> {
+  invalidateProductsCache();
   const userId = await getCurrentUserId();
   const payload: Record<string, unknown> = {};
   if (input.name !== undefined) payload.name = input.name;
@@ -140,6 +164,7 @@ export async function updateProduct(
 }
 
 export async function deleteProduct(id: string): Promise<void> {
+  invalidateProductsCache();
   const userId = await getCurrentUserId();
   const { error } = await supabase!.from("products").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
@@ -151,10 +176,13 @@ export async function deleteProduct(id: string): Promise<void> {
 // ——— Customers ———
 
 export async function getCustomers(): Promise<Customer[]> {
+  if (isFresh(_customersCache)) return _customersCache.data;
   if (!isSupabaseConfigured() || !supabase) return [];
   const { data, error } = await supabase.from("customers").select("*").order("name");
   if (error) throw error;
-  return (data ?? []).map(mapCustomer);
+  const result = (data ?? []).map(mapCustomer);
+  _customersCache = { data: result, ts: Date.now() };
+  return result;
 }
 
 export async function getCustomer(id: string): Promise<Customer | null> {
@@ -168,6 +196,7 @@ export async function getCustomer(id: string): Promise<Customer | null> {
 }
 
 export async function createCustomer(input: Omit<Customer, "id">): Promise<Customer> {
+  invalidateCustomersCache();
   if (!supabase) throw new Error("Supabase not configured");
   const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
@@ -190,6 +219,7 @@ export async function updateCustomer(
   id: string,
   input: Partial<Omit<Customer, "id">>
 ): Promise<Customer> {
+  invalidateCustomersCache();
   const userId = await getCurrentUserId();
   const payload: Record<string, unknown> = {};
   if (input.name !== undefined) payload.name = input.name;
@@ -203,6 +233,7 @@ export async function updateCustomer(
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
+  invalidateCustomersCache();
   const userId = await getCurrentUserId();
   const { error } = await supabase!.from("customers").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
@@ -706,6 +737,7 @@ export async function getOrderItems(orderId: string): Promise<OrderItem[]> {
 
 
 export async function updateProductUnitSize(id: string, unitSize: number): Promise<Product> {
+  invalidateProductsCache();
   const userId = await getCurrentUserId();
   const { data, error } = await supabase!.from('products').update({ unit_size: unitSize })
     .eq('id', id).eq('user_id', userId).select().single();
@@ -714,6 +746,7 @@ export async function updateProductUnitSize(id: string, unitSize: number): Promi
 }
 
 export async function updateProductReorderThreshold(id: string, threshold: number): Promise<Product> {
+  invalidateProductsCache();
   const userId = await getCurrentUserId();
   const { data, error } = await supabase!.from('products').update({ reorder_threshold: threshold })
     .eq('id', id).eq('user_id', userId).select().single();
@@ -869,6 +902,7 @@ export async function deleteBatch(id: string): Promise<void> {
  * If no row exists yet (new user), inserts a default row and returns defaults.
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
+  if (isFresh(_featureFlagsCache)) return _featureFlagsCache.data;
   if (!isSupabaseConfigured() || !supabase) return defaultFlags;
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -885,6 +919,8 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
     return defaultFlags;
   }
 
+  let result: FeatureFlags;
+
   // No row yet — first login. Insert defaults.
   if (!data) {
     const { data: inserted, error: insertError } = await supabase
@@ -897,10 +933,13 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
       console.error("Failed to create feature flags:", insertError);
       return defaultFlags;
     }
-    return inserted as FeatureFlags;
+    result = inserted as FeatureFlags;
+  } else {
+    result = data as FeatureFlags;
   }
 
-  return data as FeatureFlags;
+  _featureFlagsCache = { data: result, ts: Date.now() };
+  return result;
 }
 
 // ——— Tags ———
