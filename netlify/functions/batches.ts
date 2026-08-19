@@ -82,6 +82,20 @@ export default async (req: Request, _context: Context) => {
       try {
         await client.query("BEGIN");
 
+        // Auto-generate batch number if not provided
+        let resolvedBatchNumber = batch_number && String(batch_number).trim()
+          ? String(batch_number).trim()
+          : null;
+        if (!resolvedBatchNumber) {
+          const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+          const countRes = await client.query(
+            "SELECT COUNT(*) FROM product_batches WHERE product_id=$1",
+            [product_id]
+          );
+          const seq = String(Number(countRes.rows[0].count) + 1).padStart(3, "0");
+          resolvedBatchNumber = `${today}-${seq}`;
+        }
+
         const res = await client.query(
           `INSERT INTO product_batches
              (product_id, batch_number, number_of_bottles, bottle_size_litres,
@@ -91,7 +105,7 @@ export default async (req: Request, _context: Context) => {
            RETURNING *`,
           [
             product_id,
-            batch_number ?? null,
+            resolvedBatchNumber,
             number_of_bottles ?? null,
             bottle_size_litres ?? null,
             unit_price ?? null,

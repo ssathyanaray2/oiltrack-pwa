@@ -11,9 +11,11 @@ import { Customers } from "./components/Customers";
 import { CustomerDetail } from "./components/CustomerDetail";
 import { CustomerForm } from "./components/CustomerForm";
 import { ProductDetail } from "./components/ProductDetail";
+import { ResetPassword } from "./components/ResetPassword";
 
 export const router = createBrowserRouter([
   { path: "/login", Component: Login },
+  { path: "/reset-password", Component: ResetPassword },
   {
     path: "/",
     Component: AuthGuard,

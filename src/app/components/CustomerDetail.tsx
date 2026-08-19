@@ -6,6 +6,7 @@ import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Customer, Order, Product, ProductBatch } from "../../lib/types";
 import { ArrowLeft, User, Phone, MapPin, Mail, Calendar, Package as PackageIcon, Pencil, ContactRound, IndianRupee } from "lucide-react";
 import React from "react";
+import { toast } from "sonner";
 import { formatPhoneLink, formatMapsLink } from "../../lib/utils";
 
 export function CustomerDetail() {
@@ -103,7 +104,7 @@ export function CustomerDetail() {
       .toUpperCase();
 
   const sharePrices = async () => {
-    if (!products.length) return;
+    if (!products.length) { toast.error("No products loaded"); return; }
     let batches = batchesByProduct;
     if (!Object.keys(batches).length) {
       setLoadingPrices(true);
@@ -115,6 +116,7 @@ export function CustomerDetail() {
         setBatchesByProduct(batches);
       } catch (e) {
         console.error(e);
+        toast.error("Failed to load prices");
         return;
       } finally {
         setLoadingPrices(false);
@@ -123,7 +125,7 @@ export function CustomerDetail() {
     const lines = products.map((p) => {
       const productBatches = batches[p.id] ?? [];
       const oldest = productBatches
-        .filter((b) => b.unitPrice)
+        .filter((b) => b.unitPrice > 0)
         .sort((a, b) => {
           if (!a.manufactureDate && !b.manufactureDate) return 0;
           if (!a.manufactureDate) return 1;
@@ -134,9 +136,10 @@ export function CustomerDetail() {
       if (!price) return null;
       return `• ${p.name} (${p.unitSize}L/bottle): ₹${price}/bottle`;
     }).filter(Boolean).join("\n");
-    if (!lines) return;
+    if (!lines) { toast.error("No prices set on any product batches"); return; }
+    if (!customer?.phone) { toast.error("Customer has no phone number"); return; }
     const message = `*Current Prices*\n\n${lines}`;
-    const rawPhone = customer?.phone?.replace(/\D/g, "") ?? "";
+    const rawPhone = customer.phone.replace(/\D/g, "");
     const phone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank");
   };

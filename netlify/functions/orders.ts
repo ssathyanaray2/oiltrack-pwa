@@ -102,11 +102,22 @@ export default async (req: Request, _context: Context) => {
       if (action === "since") {
         const since = url.searchParams.get("since");
         if (!since) return badRequest("since is required");
-        const rows = await query(
+        const rows = await query<Record<string, unknown>>(
           "SELECT * FROM orders WHERE user_id=$1 AND order_date >= $2 ORDER BY order_date DESC",
           [user.id, since]
         );
-        return ok(rows);
+        const orderIds = rows.map((r) => r.id);
+        let items: Record<string, unknown>[] = [];
+        if (orderIds.length > 0) {
+          items = await query("SELECT * FROM order_items WHERE order_id = ANY($1)", [orderIds]);
+        }
+        const itemsByOrder: Record<string, unknown[]> = {};
+        for (const item of items) {
+          const oid = String(item.order_id);
+          if (!itemsByOrder[oid]) itemsByOrder[oid] = [];
+          itemsByOrder[oid].push(item);
+        }
+        return ok(rows.map((r) => ({ ...r, items: itemsByOrder[String(r.id)] ?? [] })));
       }
 
       // action=counts — total and pending per customer

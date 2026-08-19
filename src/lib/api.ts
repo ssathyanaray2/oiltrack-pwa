@@ -45,6 +45,7 @@ async function apiFetch(path: string, options?: RequestInit): Promise<unknown> {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as any).error ?? `Request failed: ${res.status}`);
   }
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -94,7 +95,7 @@ function mapOrder(
     paymentStatus: (orderRow.payment_status as Order["paymentStatus"]) ?? "Unpaid",
     paymentMethod: (orderRow.payment_method as Order["paymentMethod"]) ?? undefined,
     amountPaid: orderRow.amount_paid != null ? Number(orderRow.amount_paid) : undefined,
-    deliveryDate: orderRow.delivery_date != null ? String(orderRow.delivery_date) : undefined,
+    deliveryDate: orderRow.delivery_date != null ? String(orderRow.delivery_date).slice(0, 10) : undefined,
     deliveryCharge: orderRow.delivery_charge != null ? Number(orderRow.delivery_charge) : undefined,
     notes: orderRow.notes != null ? String(orderRow.notes) : undefined,
     receiptNumber: orderRow.receipt_number != null ? Number(orderRow.receipt_number) : undefined,
@@ -109,15 +110,6 @@ function mapOrder(
   };
 }
 
-function mapOrderItem(row: Record<string, unknown>): OrderItem {
-  return {
-    id: String(row.id),
-    orderId: String(row.order_id),
-    productId: String(row.product_id),
-    quantity: Number(row.quantity),
-  };
-}
-
 function mapBatch(row: Record<string, unknown>): ProductBatch {
   return {
     id: String(row.id),
@@ -128,8 +120,8 @@ function mapBatch(row: Record<string, unknown>): ProductBatch {
     unitPrice: Number(row.unit_price ?? 0),
     costPrice: Number(row.cost_price ?? 0),
     quantityLitres: Number(row.quantity_litres ?? 0),
-    manufactureDate: row.manufacture_date ? String(row.manufacture_date) : null,
-    expiryDate: row.expiry_date ? String(row.expiry_date) : null,
+    manufactureDate: row.manufacture_date ? String(row.manufacture_date).slice(0, 10) : null,
+    expiryDate: row.expiry_date ? String(row.expiry_date).slice(0, 10) : null,
     notes: row.notes ? String(row.notes) : undefined,
     createdAt: row.created_at ? String(row.created_at) : undefined,
   };

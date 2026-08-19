@@ -171,7 +171,7 @@ export function Dashboard() {
           setCachedOrders(ordersData);
           setCachedDashboard({ monthlySales: sales, inventoryLevels: [] });
         } catch (e) {
-          console.error(e);
+          console.error("[Dashboard] load failed:", e);
           const cachedProducts = getCachedProducts() as Product[] | null;
           const cachedOrders = getCachedOrders() as Order[] | null;
           const cachedDash = getCachedDashboard();
