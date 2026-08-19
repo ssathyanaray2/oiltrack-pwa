@@ -25,7 +25,6 @@ import {
   saveReceiptNumber,
   // uploadReceipt, getReceiptDownloadUrl, receiptExists — disabled to reduce Supabase disk I/O
 } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, getCachedCustomers, getCachedBatches, setCachedProducts, setCachedCustomers } from "../../lib/cache";
 import { parseOrderText, type ParsedOrderItem } from "../../lib/orderParser";
 import type { Order, Product, Customer, ProductBatch, Tag } from "../../lib/types";
@@ -109,7 +108,7 @@ export function OrderForm() {
     if (!productId) return [];
     if (productBatches[productId]) return productBatches[productId];
     let batches: ProductBatch[] = [];
-    if (isSupabaseConfigured() && isOnline) {
+    if (isOnline) {
       try {
         batches = await getBatchesForProduct(productId);
       } catch {
@@ -131,8 +130,7 @@ export function OrderForm() {
 
   useEffect(() => {
     const load = async () => {
-      const useSupabase = isSupabaseConfigured() && isOnline;
-      if (useSupabase) {
+      if (isOnline) {
         try {
           const [customersData, productsData, tagsData] = await Promise.all([getCustomers(), getProducts(), getTags()]);
           setCustomers(customersData);
@@ -212,6 +210,9 @@ export function OrderForm() {
               status: order.status,
               paymentStatus: order.paymentStatus,
               paymentMethod: order.paymentMethod,
+              amountPaid: order.amountPaid?.toString() ?? "",
+              deliveryDate: order.deliveryDate ?? "",
+              deliveryCharge: order.deliveryCharge?.toString() ?? "",
               notes: order.notes ?? "",
             });
             const items = order.items && order.items.length > 0
@@ -490,12 +491,6 @@ export function OrderForm() {
         return;
       }
 
-      if (!isSupabaseConfigured()) {
-        toast.success(isEditing ? "Order updated." : "Order created.");
-        navigate("/orders");
-        return;
-      }
-
       for (const item of parsedItems) {
         const product = products.find((p) => p.id === item.productId);
         if (!product) {
@@ -589,7 +584,7 @@ export function OrderForm() {
 
   const confirmDelete = async () => {
     setShowDeleteConfirm(false);
-    if (!isOnline || !isSupabaseConfigured() || !id) {
+    if (!isOnline || !id) {
       toast.success("Order deleted");
       navigate("/orders");
       return;
@@ -839,7 +834,7 @@ export function OrderForm() {
               <p className="text-xs text-[#737686] mt-0.5">Select oil type and quantity</p>
             </div>
             <div className="flex items-center gap-2">
-              {isSupabaseConfigured() && ai_order_fill && (
+              {ai_order_fill && (
                 <div className="relative group">
                   <button
                     type="button"

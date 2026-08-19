@@ -14,4 +14,5 @@ export const supabase =
     ? createClient(supabaseUrl, supabaseAnonKey)
     : (null as ReturnType<typeof createClient> | null);
 
-export const isSupabaseConfigured = () => !!supabase;
+// Always true — app now uses Netlify functions, not Supabase directly
+export const isSupabaseConfigured = () => true;

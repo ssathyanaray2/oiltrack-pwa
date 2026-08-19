@@ -1,41 +1,33 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
-import { supabase } from "../../lib/supabase";
+import { signIn, signUp, saveAuthToken } from "../../lib/neonAuth";
 import { Droplets } from "lucide-react";
-import React from "react";
 
 type Mode = "signin" | "signup";
 
 export function Login() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signupDone, setSignupDone] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate("/", { replace: true });
-    });
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) return;
     setError(null);
     setLoading(true);
 
     try {
       if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { token } = await signIn(email, password);
+        saveAuthToken(token);
         navigate("/", { replace: true });
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
+        const { token } = await signUp(email, password, name || email);
+        saveAuthToken(token);
         setSignupDone(true);
       }
     } catch (err: unknown) {
@@ -52,15 +44,15 @@ export function Login() {
           <div className="bg-primary/10 p-4 rounded-2xl inline-flex mx-auto">
             <Droplets className="h-8 w-8 text-primary" />
           </div>
-          <h2 className="text-2xl font-semibold">Check your email</h2>
+          <h2 className="text-2xl font-semibold">Account created</h2>
           <p className="text-muted-foreground">
-            We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account, then sign in.
+            Your account for <strong>{email}</strong> is ready. Sign in to continue.
           </p>
           <button
             className="text-primary underline text-sm"
             onClick={() => { setMode("signin"); setSignupDone(false); }}
           >
-            Back to sign in
+            Sign in
           </button>
         </div>
       </div>
@@ -70,7 +62,6 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
       <div className="w-full max-w-sm space-y-8">
-        {/* Logo */}
         <div className="text-center space-y-2">
           <div className="bg-primary/10 p-4 rounded-2xl inline-flex">
             <Droplets className="h-10 w-10 text-primary" />
@@ -79,7 +70,6 @@ export function Login() {
           <p className="text-muted-foreground text-sm">Oil distribution management</p>
         </div>
 
-        {/* Card */}
         <div className="bg-card rounded-2xl p-6 shadow-md border-2 border-border space-y-6">
           <div className="flex rounded-xl bg-muted p-1 gap-1">
             <button
@@ -103,6 +93,23 @@ export function Login() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "signup" && (
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-foreground" htmlFor="name">
+                  Name
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  autoComplete="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your name"
+                  className="w-full rounded-xl border-2 border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary transition-colors"
+                />
+              </div>
+            )}
+
             <div className="space-y-1">
               <label className="text-sm font-medium text-foreground" htmlFor="email">
                 Email

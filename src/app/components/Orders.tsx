@@ -5,7 +5,6 @@ import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
 import { getOrdersPaginated, getProducts, updateOrder, InsufficientStockError, getTags, getNextReceiptNumber, saveReceiptNumber/*, uploadReceipt, getReceiptDownloadUrl, receiptExists*/ } from "../../lib/api";
 import { toast } from "sonner";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedOrders, getCachedProducts, setCachedProducts, setCachedOrders } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineOrdersDB, type OfflineOrder } from "../../lib/db";
@@ -685,7 +684,7 @@ export function Orders() {
 
   // Load tags for filter dropdown
   useEffect(() => {
-    if (!isSupabaseConfigured() || !isOnline) return;
+    if (!isOnline) return;
     getTags().then(setAllTags).catch(console.error);
   }, [isOnline]);
 
@@ -697,7 +696,7 @@ export function Orders() {
   }, []);
 
   const loadOrders = async (pageNum: number, replace: boolean) => {
-    if (!isSupabaseConfigured() || !isOnline) {
+    if (!isOnline) {
       if (replace) {
         const co = getCachedOrders() as Order[] | null;
         setOrders(co ?? []);
@@ -730,7 +729,7 @@ export function Orders() {
       setPage(0);
       setHasMore(true);
       // Load products once
-      if (isSupabaseConfigured() && isOnline) {
+      if (isOnline) {
         try {
           const productsData = await getProducts();
           setProducts(productsData);

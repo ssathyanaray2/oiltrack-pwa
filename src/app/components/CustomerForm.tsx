@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, WifiOff, BookUser } from "lucide-react";
 import { toast } from "sonner";
 import { getCustomer, createCustomer, updateCustomer } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedCustomers, setCachedCustomers } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineCustomersDB } from "../../lib/db";
@@ -70,8 +69,7 @@ export function CustomerForm() {
       return;
     }
     const load = async () => {
-      const useSupabase = isSupabaseConfigured() && isOnline;
-      if (useSupabase) {
+      if (isOnline) {
         try {
           const customer = await getCustomer(id);
           if (customer) {
@@ -127,7 +125,7 @@ export function CustomerForm() {
 
     setSaving(true);
     try {
-      if (!isSupabaseConfigured() || !isOnline) {
+      if (!isOnline) {
         await offlineCustomersDB.put({
           id: `offline-customer-${Date.now()}`,
           name: formData.name.trim(),

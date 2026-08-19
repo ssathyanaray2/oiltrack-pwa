@@ -5,3 +5,5 @@ claude.md
 *.png
 *.html
 oil tracker_files/
+# Local Netlify folder
+.netlify

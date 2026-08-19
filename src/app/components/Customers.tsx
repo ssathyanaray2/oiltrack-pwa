@@ -3,7 +3,6 @@ import Fuse from "fuse.js";
 import { ConfirmModal } from "./ConfirmModal";
 import { Link } from "react-router";
 import { getCustomers, getOrderCountsByCustomer } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedCustomers, setCachedCustomers } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import { offlineCustomersDB, type OfflineCustomer } from "../../lib/db";
@@ -39,8 +38,7 @@ export function Customers() {
 
   useEffect(() => {
     const load = async () => {
-      const useSupabase = isSupabaseConfigured() && isOnline;
-      if (useSupabase) {
+      if (isOnline) {
         try {
           const [customersData, countsData] = await Promise.all([getCustomers(), getOrderCountsByCustomer()]);
           setCustomers(customersData);
@@ -65,11 +63,6 @@ export function Customers() {
   const getCustomerOrderCount = (customerId: string) => orderCounts[customerId]?.total ?? 0;
   const getCustomerPendingOrders = (customerId: string) => orderCounts[customerId]?.pending ?? 0;
 
-  const getMapsUrl = (customer: Customer): string | null => {
-    if (customer.maps_link?.trim()) return customer.maps_link.trim();
-    if (customer.address?.trim()) return formatMapsLink(customer.address);
-    return null;
-  };
 
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
 

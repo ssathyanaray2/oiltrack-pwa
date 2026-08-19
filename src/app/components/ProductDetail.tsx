@@ -7,7 +7,6 @@ import {
   updateBatch,
   deleteBatch,
 } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, getCachedBatches, setCachedBatches } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Product, ProductBatch } from "../../lib/types";
@@ -92,8 +91,7 @@ export function ProductDetail() {
   const loadData = async (silent = false) => {
     if (!id) { setLoading(false); return; }
     if (!silent) setLoading(true);
-    const useSupabase = isSupabaseConfigured() && isOnline;
-    if (useSupabase) {
+    if (isOnline) {
       try {
         const [prod, batchList] = await Promise.all([
           getProduct(id),

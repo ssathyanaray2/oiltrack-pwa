@@ -5,8 +5,7 @@ import { Plus, Minus, Package, AlertTriangle, Pencil, ImageUp, /* TrendingUp, Tr
 import { Link } from "react-router";
 import { useFeatureFlags } from "../../lib/featureFlags";
 import { toast } from "sonner";
-import { getProducts, updateProductUnitSize, updateProductReorderThreshold, deleteProduct } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
+import { getProducts, updateProduct, deleteProduct } from "../../lib/api";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 // import { extractPricesFromImage, type PriceChange } from "../../lib/priceAnalysis"; // DISABLED: AI price feature paused until batch-price UX is designed
@@ -100,8 +99,7 @@ export function Inventory() {
 
   useEffect(() => {
     const load = async () => {
-      const useSupabase = isSupabaseConfigured() && isOnline;
-      if (useSupabase) {
+      if (isOnline) {
         try {
           const data = await getProducts();
           setProducts(data);
@@ -152,7 +150,7 @@ export function Inventory() {
     const { id, name } = deleteConfirm;
     setDeleteConfirm(null);
     try {
-      if (isSupabaseConfigured() && isOnline) {
+      if (isOnline) {
         await deleteProduct(id);
       }
       const next = products.filter((p) => p.id !== id);
@@ -172,9 +170,9 @@ export function Inventory() {
       if (modalData.action === "unitSize") {
         const newSize = parseFloat(inputAmount);
         if (isNaN(newSize) || newSize <= 0) { toast.error("Please enter a valid container size"); return; }
-        if (isSupabaseConfigured() && isOnline) {
+        if (isOnline) {
           try {
-            const updated = await updateProductUnitSize(modalData.productId, newSize);
+            const updated = await updateProduct(modalData.productId, { unitSize: newSize });
             setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
             setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, unitSize: newSize } : p));
             toast.success(`Container size updated to ${newSize}L for ${modalData.productName}`);
@@ -190,9 +188,9 @@ export function Inventory() {
       if (modalData.action === "reorderThreshold") {
         const newThreshold = parseFloat(inputAmount);
         if (isNaN(newThreshold) || newThreshold < 0) { toast.error("Please enter a valid threshold"); return; }
-        if (isSupabaseConfigured() && isOnline) {
+        if (isOnline) {
           try {
-            const updated = await updateProductReorderThreshold(modalData.productId, newThreshold);
+            const updated = await updateProduct(modalData.productId, { lowStockThreshold: newThreshold });
             setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
             setCachedProducts(products.map((p) => p.id === modalData.productId ? { ...p, lowStockThreshold: newThreshold } : p));
             toast.success(`Reorder threshold updated to ${newThreshold} for ${modalData.productName}`);

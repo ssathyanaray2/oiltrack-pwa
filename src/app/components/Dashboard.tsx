@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { getProducts, getOrdersSince, getCustomerLastOrders } from "../../lib/api";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { getSession } from "../../lib/neonAuth";
 import { getCachedProducts, getCachedOrders, getCachedDashboard, setCachedProducts, setCachedOrders, setCachedDashboard } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Product, Order } from "../../lib/types";
@@ -123,10 +123,8 @@ export function Dashboard() {
   const chartDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isSupabaseConfigured() || !supabase) return;
-    supabase.auth.getSession().then(({ data }) => {
-      const email = data.session?.user?.email ?? "";
-      setUserName(email.split("@")[0]);
+    getSession().then((user) => {
+      if (user?.email) setUserName(user.email.split("@")[0]);
     });
   }, []);
 
@@ -142,26 +140,13 @@ export function Dashboard() {
   }, []);
 
   const handleSignOut = async () => {
-    if (isSupabaseConfigured() && supabase) await supabase.auth.signOut();
+    const { signOut } = await import("../../lib/neonAuth");
+    await signOut();
+    window.location.href = "/login";
   };
 
   const handleChangePassword = async () => {
-    if (!isSupabaseConfigured() || !supabase) return;
-    setChangingPassword(true);
-    try {
-      const { data } = await supabase.auth.getSession();
-      const email = data.session?.user?.email;
-      if (!email) return;
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
-      if (error) throw error;
-      toast.success(`Password reset email sent to ${email}`);
-      setShowProfileMenu(false);
-    } catch (err) {
-      toast.error("Failed to send reset email");
-      console.error(err);
-    } finally {
-      setChangingPassword(false);
-    }
+    toast.info("Password change is not supported yet.");
   };
 
   const [monthlySales, setMonthlySales] = useState<{ month: string; sales: number }[]>([]);
@@ -169,8 +154,7 @@ export function Dashboard() {
 
   useEffect(() => {
     const load = async () => {
-      const useSupabase = isSupabaseConfigured() && isOnline;
-      if (useSupabase) {
+      if (isOnline) {
         try {
           const startOfYear = new Date(new Date().getFullYear(), 0, 1);
           const [productsData, ordersData, lastOrdersData] = await Promise.all([
@@ -404,17 +388,15 @@ export function Dashboard() {
                 </div>
                 {changingPassword ? "Sending email…" : "Change Password"}
               </button>
-              {isSupabaseConfigured() && (
-                <button
-                  onClick={handleSignOut}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 text-sm font-medium text-[#ba1a1a] hover:bg-red-50 transition-colors border-t border-[#f2f3ff]"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center">
-                    <LogOut className="h-3.5 w-3.5 text-[#ba1a1a]" />
-                  </div>
-                  Sign Out
-                </button>
-              )}
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-sm font-medium text-[#ba1a1a] hover:bg-red-50 transition-colors border-t border-[#f2f3ff]"
+              >
+                <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center">
+                  <LogOut className="h-3.5 w-3.5 text-[#ba1a1a]" />
+                </div>
+                Sign Out
+              </button>
             </div>
           )}
         </div>

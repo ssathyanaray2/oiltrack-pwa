@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router";
 import { getCustomer, getOrdersByCustomer, getProducts, getBatchesForProduct } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedCustomers, getCachedOrders, getCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Customer, Order, Product, ProductBatch } from "../../lib/types";
@@ -27,8 +26,7 @@ export function CustomerDetail() {
       return;
     }
     const load = async () => {
-      const useSupabase = isSupabaseConfigured() && isOnline;
-      if (useSupabase) {
+      if (isOnline) {
         try {
           const [customerData, ordersData, productsData] = await Promise.all([
             getCustomer(id),

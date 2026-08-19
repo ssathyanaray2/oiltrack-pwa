@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { createProduct } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { getCachedProducts, setCachedProducts } from "../../lib/cache";
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
 import type { Product } from "../../lib/types";
@@ -42,7 +41,7 @@ export function ProductForm() {
     if (isNaN(unitSize) || unitSize <= 0) { toast.error("Enter a valid container size"); return; }
     if (isNaN(lowStockThreshold) || lowStockThreshold < 0) { toast.error("Enter a valid reorder threshold"); return; }
 
-    if (!isSupabaseConfigured() || !isOnline) {
+    if (!isOnline) {
       toast.error("Adding products requires an internet connection");
       return;
     }

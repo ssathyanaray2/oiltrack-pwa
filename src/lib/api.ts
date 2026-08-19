@@ -1,8 +1,7 @@
-import { supabase, isSupabaseConfigured } from "./supabase";
 import type { Product, Customer, Order, OrderItem, ProductBatch, Tag } from "./types";
 import type { FeatureFlags } from "./featureFlags";
 import { defaultFlags } from "./featureFlags";
-import { generateBatchNumber } from "./utils";
+import { getValidJwt } from "./neonAuth";
 
 export class InsufficientStockError extends Error {
   constructor(public productName: string, public available: number, public requested: number) {
@@ -12,7 +11,7 @@ export class InsufficientStockError extends Error {
 }
 
 // ── In-memory session cache ──────────────────────────────────────────────────
-// Avoids redundant Supabase fetches when navigating between pages in the same
+// Avoids redundant fetches when navigating between pages in the same
 // browser session. Mutations call the matching invalidate function so stale
 // data is never served after a write.
 
@@ -30,12 +29,26 @@ function isFresh<T>(entry: CacheEntry<T> | null): entry is CacheEntry<T> {
 export function invalidateProductsCache(): void { _productsCache = null; }
 export function invalidateCustomersCache(): void { _customersCache = null; }
 
-async function getCurrentUserId(): Promise<string> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-  return user.id;
+// ── Core fetch helper ────────────────────────────────────────────────────────
+
+async function apiFetch(path: string, options?: RequestInit): Promise<unknown> {
+  const token = await getValidJwt();
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...options?.headers,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
 }
+
+// ── Mapper functions ─────────────────────────────────────────────────────────
 
 /** Map DB row to Product (prices now live on product_batches, not products) */
 function mapProduct(row: Record<string, unknown>): Product {
@@ -49,7 +62,7 @@ function mapProduct(row: Record<string, unknown>): Product {
   };
 }
 
-/** Map DB row to Customer (schema has no email unless you add it) */
+/** Map DB row to Customer */
 function mapCustomer(row: Record<string, unknown>): Customer {
   return {
     id: String(row.id),
@@ -75,7 +88,7 @@ function mapOrder(
     customerName: (orderRow.customer_name != null ? String(orderRow.customer_name) : "") || customerName,
     productId: firstItem?.product_id != null ? String(firstItem.product_id) : "",
     quantity: firstItem ? Number(firstItem.quantity) : 0,
-    date: String(orderRow.order_date ?? orderRow.date ?? new Date().toLocaleDateString("en-CA")),
+    date: String(orderRow.order_date ?? orderRow.date ?? new Date().toLocaleDateString("en-CA")).slice(0, 10),
     createdAt: orderRow.created_at != null ? String(orderRow.created_at) : undefined,
     status: (orderRow.status as Order["status"]) ?? "Pending",
     paymentStatus: (orderRow.payment_status as Order["paymentStatus"]) ?? "Unpaid",
@@ -105,45 +118,58 @@ function mapOrderItem(row: Record<string, unknown>): OrderItem {
   };
 }
 
+function mapBatch(row: Record<string, unknown>): ProductBatch {
+  return {
+    id: String(row.id),
+    productId: String(row.product_id),
+    batchNumber: String(row.batch_number),
+    numberOfBottles: Number(row.number_of_bottles),
+    bottleSizeLitres: Number(row.bottle_size_litres),
+    unitPrice: Number(row.unit_price ?? 0),
+    costPrice: Number(row.cost_price ?? 0),
+    quantityLitres: Number(row.quantity_litres ?? 0),
+    manufactureDate: row.manufacture_date ? String(row.manufacture_date) : null,
+    expiryDate: row.expiry_date ? String(row.expiry_date) : null,
+    notes: row.notes ? String(row.notes) : undefined,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+  };
+}
+
+/** Stock is only deducted when an order is Packed or Delivered */
+function isStockDeducted(status: Order["status"]): boolean {
+  return status === "Packed" || status === "Delivered";
+}
+
 // ——— Products ———
 
 export async function getProducts(): Promise<Product[]> {
   if (isFresh(_productsCache)) return _productsCache.data;
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data, error } = await supabase.from("products").select("*").order("name");
-  if (error) throw error;
-  const result = (data ?? []).map(mapProduct);
+  const data = await apiFetch("/api/products") as Record<string, unknown>[];
+  const result = data.map(mapProduct);
   _productsCache = { data: result, ts: Date.now() };
   return result;
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
-  if (!isSupabaseConfigured() || !supabase) return null;
-  const { data, error } = await supabase.from("products").select("*").eq("id", id).single();
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw error;
+  try {
+    const data = await apiFetch(`/api/products?id=${id}`) as Record<string, unknown>;
+    return data ? mapProduct(data) : null;
+  } catch {
+    return null;
   }
-  return data ? mapProduct(data) : null;
 }
 
 export async function createProduct(input: Omit<Product, "id" | "stock">): Promise<Product> {
   invalidateProductsCache();
-  if (!supabase) throw new Error("Supabase not configured");
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data, error } = await supabase
-    .from("products")
-    .insert({
+  const data = await apiFetch("/api/products", {
+    method: "POST",
+    body: JSON.stringify({
       name: input.name,
-      quantity: 0,
       unit: input.unit,
       reorder_threshold: input.lowStockThreshold,
       unit_size: input.unitSize ?? 1,
-      user_id: user?.id ?? null,
-    })
-    .select()
-    .single();
-  if (error) throw error;
+    }),
+  }) as Record<string, unknown>;
   return mapProduct(data);
 }
 
@@ -152,66 +178,57 @@ export async function updateProduct(
   input: Partial<Omit<Product, "id">>
 ): Promise<Product> {
   invalidateProductsCache();
-  const userId = await getCurrentUserId();
   const payload: Record<string, unknown> = {};
   if (input.name !== undefined) payload.name = input.name;
   if (input.unit !== undefined) payload.unit = input.unit;
   if (input.lowStockThreshold !== undefined) payload.reorder_threshold = input.lowStockThreshold;
   if (input.unitSize !== undefined) payload.unit_size = input.unitSize;
-  const { data, error } = await supabase!.from("products").update(payload).eq("id", id).eq("user_id", userId).select().single();
-  if (error) throw error;
+  const data = await apiFetch(`/api/products?id=${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }) as Record<string, unknown>;
   return mapProduct(data);
 }
 
 export async function deleteProduct(id: string): Promise<void> {
   invalidateProductsCache();
-  const userId = await getCurrentUserId();
-  const { error } = await supabase!.from("products").delete().eq("id", id).eq("user_id", userId);
-  if (error) throw error;
+  await apiFetch(`/api/products?id=${id}`, { method: "DELETE" });
 }
 
-// Note: stock is now derived from batch quantity_litres via DB trigger.
+// Note: stock is derived from batch quantity_litres via DB trigger.
 // To adjust stock, add/edit/delete batches via createBatch / updateBatch / deleteBatch.
 
 // ——— Customers ———
 
 export async function getCustomers(): Promise<Customer[]> {
   if (isFresh(_customersCache)) return _customersCache.data;
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data, error } = await supabase.from("customers").select("*").order("name");
-  if (error) throw error;
-  const result = (data ?? []).map(mapCustomer);
+  const data = await apiFetch("/api/customers") as Record<string, unknown>[];
+  const result = data.map(mapCustomer);
   _customersCache = { data: result, ts: Date.now() };
   return result;
 }
 
 export async function getCustomer(id: string): Promise<Customer | null> {
-  if (!isSupabaseConfigured() || !supabase) return null;
-  const { data, error } = await supabase.from("customers").select("*").eq("id", id).single();
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw error;
+  try {
+    const data = await apiFetch(`/api/customers?id=${id}`) as Record<string, unknown>;
+    return data ? mapCustomer(data) : null;
+  } catch {
+    return null;
   }
-  return data ? mapCustomer(data) : null;
 }
 
 export async function createCustomer(input: Omit<Customer, "id">): Promise<Customer> {
   invalidateCustomersCache();
-  if (!supabase) throw new Error("Supabase not configured");
-  const { data: { user } } = await supabase.auth.getUser();
-  const { data, error } = await supabase
-    .from("customers")
-    .insert({
+  const data = await apiFetch("/api/customers", {
+    method: "POST",
+    body: JSON.stringify({
       name: input.name,
       phone: input.phone ?? null,
       address: input.address ?? null,
       email: input.email ?? null,
       maps_link: input.maps_link ?? null,
-      user_id: user?.id ?? null,
-    })
-    .select()
-    .single();
-  if (error) throw error;
+    }),
+  }) as Record<string, unknown>;
   return mapCustomer(data);
 }
 
@@ -220,31 +237,25 @@ export async function updateCustomer(
   input: Partial<Omit<Customer, "id">>
 ): Promise<Customer> {
   invalidateCustomersCache();
-  const userId = await getCurrentUserId();
   const payload: Record<string, unknown> = {};
   if (input.name !== undefined) payload.name = input.name;
   if (input.phone !== undefined) payload.phone = input.phone;
   if (input.address !== undefined) payload.address = input.address;
   if (input.email !== undefined) payload.email = input.email ?? null;
   if (input.maps_link !== undefined) payload.maps_link = input.maps_link ?? null;
-  const { data, error } = await supabase!.from("customers").update(payload).eq("id", id).eq("user_id", userId).select().single();
-  if (error) throw error;
+  const data = await apiFetch(`/api/customers?id=${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }) as Record<string, unknown>;
   return mapCustomer(data);
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
   invalidateCustomersCache();
-  const userId = await getCurrentUserId();
-  const { error } = await supabase!.from("customers").delete().eq("id", id).eq("user_id", userId);
-  if (error) throw error;
+  await apiFetch(`/api/customers?id=${id}`, { method: "DELETE" });
 }
 
-/** Stock is only deducted when an order is Packed or Delivered */
-function isStockDeducted(status: Order["status"]): boolean {
-  return status === "Packed" || status === "Delivered";
-}
-
-// ——— Orders (with order_items: one item per order for current UI) ———
+// ——— Orders ———
 
 const PAGE_SIZE = 30;
 
@@ -253,217 +264,66 @@ export async function getOrdersPaginated(
   status: "All" | "Pending" | "Packed" | "Delivered" | "Cancelled" = "All",
   sortOrder: "recent" | "oldest" = "recent"
 ): Promise<{ orders: Order[]; hasMore: boolean }> {
-  if (!isSupabaseConfigured() || !supabase) return { orders: [], hasMore: false };
-  const from = page * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
-
-  let query = supabase
-    .from("orders")
-    .select("*")
-    .order("order_date", { ascending: sortOrder === "oldest" })
-    .order("created_at", { ascending: sortOrder === "oldest" })
-    .range(from, to);
-
-  if (status !== "All") query = query.eq("status", status);
-
-  const { data: ordersData, error: ordersError } = await query;
-  if (ordersError) throw ordersError;
-  if (!ordersData?.length) return { orders: [], hasMore: false };
-
-  const orderIds = ordersData.map((o) => o.id);
-  const { data: itemsData, error: itemsError } = await supabase
-    .from("order_items")
-    .select("*")
-    .in("order_id", orderIds);
-  if (itemsError) throw itemsError;
-
-  const customerIds = [...new Set(ordersData.map((o) => o.customer_id).filter(Boolean))];
-  const customerMap = new Map<string, string>();
-  if (customerIds.length > 0) {
-    const { data: customersData } = await supabase.from("customers").select("id, name").in("id", customerIds);
-    (customersData ?? []).forEach((c) => customerMap.set(c.id, c.name));
-  }
-
-  const itemsByOrder = new Map<string, (typeof itemsData)[0][]>();
-  for (const item of itemsData ?? []) {
-    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
-    itemsByOrder.get(item.order_id)!.push(item);
-  }
-
-  // Fetch tags for these orders
-  const { data: orderTagsData } = await supabase
-    .from("order_tags")
-    .select("order_id, tags(id, name, color)")
-    .in("order_id", orderIds);
-  const tagsByOrder = new Map<string, Tag[]>();
-  for (const ot of orderTagsData ?? []) {
-    if (!tagsByOrder.has(ot.order_id)) tagsByOrder.set(ot.order_id, []);
-    const tag = (ot as any).tags;
-    if (tag) tagsByOrder.get(ot.order_id)!.push({ id: tag.id, name: tag.name, color: tag.color });
-  }
-
-  const orders = ordersData.map((o) => {
-    const customerName = o.customer_name ?? customerMap.get(o.customer_id) ?? "";
-    return mapOrder(o, itemsByOrder.get(o.id) ?? [], customerName, tagsByOrder.get(o.id) ?? []);
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(PAGE_SIZE),
+    status,
+    sort: sortOrder,
   });
-
-  return { orders, hasMore: ordersData.length === PAGE_SIZE };
+  const result = await apiFetch(`/api/orders?${params}`) as { orders: Record<string, unknown>[]; hasMore: boolean };
+  const orders = result.orders.map((row) =>
+    mapOrder(row, (row.items as Record<string, unknown>[]) ?? [], String(row.customer_name ?? ""), (row.tags as Tag[]) ?? [])
+  );
+  return { orders, hasMore: result.hasMore };
 }
 
 export async function getOrders(): Promise<Order[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data: ordersData, error: ordersError } = await supabase
-    .from("orders")
-    .select("*")
-    .order("order_date", { ascending: false })
-    .order("created_at", { ascending: false });
-  if (ordersError) throw ordersError;
-  if (!ordersData?.length) return [];
-
-  const orderIds = ordersData.map((o) => o.id);
-  const { data: itemsData, error: itemsError } = await supabase
-    .from("order_items")
-    .select("*")
-    .in("order_id", orderIds);
-  if (itemsError) throw itemsError;
-
-  const customerIds = [...new Set(ordersData.map((o) => o.customer_id).filter(Boolean))];
-  const customerMap = new Map<string, string>();
-  if (customerIds.length > 0) {
-    const { data: customersData } = await supabase.from("customers").select("id, name").in("id", customerIds);
-    (customersData ?? []).forEach((c) => customerMap.set(c.id, c.name));
-  }
-
-  const itemsByOrder = new Map<string, (typeof itemsData)[0][]>();
-  for (const item of itemsData ?? []) {
-    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
-    itemsByOrder.get(item.order_id)!.push(item);
-  }
-
-  return ordersData.map((o) => {
-    const customerName = o.customer_name ?? customerMap.get(o.customer_id) ?? "";
-    return mapOrder(o, itemsByOrder.get(o.id) ?? [], customerName);
-  });
+  const params = new URLSearchParams({ page: "0", pageSize: "10000", status: "All", sort: "recent" });
+  const result = await apiFetch(`/api/orders?${params}`) as { orders: Record<string, unknown>[] };
+  return (result.orders ?? []).map((row) =>
+    mapOrder(row, (row.items as Record<string, unknown>[]) ?? [], String(row.customer_name ?? ""), (row.tags as Tag[]) ?? [])
+  );
 }
 
 export async function getCustomerLastOrders(): Promise<{ customerId: string; customerName: string; date: string; status: string }[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data, error } = await supabase
-    .from("orders")
-    .select("customer_id, customer_name, order_date, status")
-    .not("customer_id", "is", null);
-  if (error) throw error;
-  return (data ?? []).map((o) => ({
-    customerId: o.customer_id,
-    customerName: o.customer_name ?? "",
-    date: o.order_date,
-    status: o.status,
+  const data = await apiFetch("/api/orders?action=last-orders") as Record<string, unknown>[];
+  return data.map((o) => ({
+    customerId: String(o.customer_id),
+    customerName: String(o.customer_name ?? ""),
+    date: String(o.order_date),
+    status: String(o.status),
   }));
 }
 
 export async function getOrdersSince(since: Date): Promise<Order[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
   const sinceStr = since.toISOString().slice(0, 10);
-  const { data: ordersData, error: ordersError } = await supabase
-    .from("orders")
-    .select("*")
-    .gte("order_date", sinceStr)
-    .order("order_date", { ascending: false })
-    .order("created_at", { ascending: false });
-  if (ordersError) throw ordersError;
-  if (!ordersData?.length) return [];
-
-  const orderIds = ordersData.map((o) => o.id);
-  const { data: itemsData, error: itemsError } = await supabase
-    .from("order_items")
-    .select("*")
-    .in("order_id", orderIds);
-  if (itemsError) throw itemsError;
-
-  const customerIds = [...new Set(ordersData.map((o) => o.customer_id).filter(Boolean))];
-  const customerMap = new Map<string, string>();
-  if (customerIds.length > 0) {
-    const { data: customersData } = await supabase.from("customers").select("id, name").in("id", customerIds);
-    (customersData ?? []).forEach((c) => customerMap.set(c.id, c.name));
-  }
-
-  const itemsByOrder = new Map<string, (typeof itemsData)[0][]>();
-  for (const item of itemsData ?? []) {
-    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
-    itemsByOrder.get(item.order_id)!.push(item);
-  }
-
-  return ordersData.map((o) => {
-    const customerName = o.customer_name ?? customerMap.get(o.customer_id) ?? "";
-    return mapOrder(o, itemsByOrder.get(o.id) ?? [], customerName);
-  });
+  const data = await apiFetch(`/api/orders?action=since&since=${sinceStr}`) as Record<string, unknown>[];
+  return data.map((row) =>
+    mapOrder(row, (row.items as Record<string, unknown>[]) ?? [], String(row.customer_name ?? ""), (row.tags as Tag[]) ?? [])
+  );
 }
 
 export async function getOrderCountsByCustomer(): Promise<Record<string, { total: number; pending: number }>> {
-  if (!isSupabaseConfigured() || !supabase) return {};
-  const { data, error } = await supabase
-    .from("orders")
-    .select("customer_id, status");
-  if (error) throw error;
-  const counts: Record<string, { total: number; pending: number }> = {};
-  for (const row of data ?? []) {
-    if (!row.customer_id) continue;
-    if (!counts[row.customer_id]) counts[row.customer_id] = { total: 0, pending: 0 };
-    counts[row.customer_id].total++;
-    if (row.status === "Pending") counts[row.customer_id].pending++;
-  }
-  return counts;
+  const data = await apiFetch("/api/orders?action=counts") as Record<string, { total: number; pending: number }>;
+  return data;
 }
 
 export async function getOrdersByCustomer(customerId: string): Promise<Order[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data: ordersData, error: ordersError } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("customer_id", customerId)
-    .order("order_date", { ascending: false })
-    .order("created_at", { ascending: false });
-  if (ordersError) throw ordersError;
-  if (!ordersData?.length) return [];
-
-  const orderIds = ordersData.map((o) => o.id);
-  const { data: itemsData, error: itemsError } = await supabase
-    .from("order_items")
-    .select("*")
-    .in("order_id", orderIds);
-  if (itemsError) throw itemsError;
-
-  const itemsByOrder = new Map<string, (typeof itemsData)[0][]>();
-  for (const item of itemsData ?? []) {
-    if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []);
-    itemsByOrder.get(item.order_id)!.push(item);
-  }
-
-  const customerName = ordersData[0]?.customer_name ?? "";
-  return ordersData.map((o) => mapOrder(o, itemsByOrder.get(o.id) ?? [], o.customer_name ?? customerName));
+  const data = await apiFetch(`/api/orders?action=by-customer&customerId=${customerId}`) as Record<string, unknown>[];
+  return data.map((row) =>
+    mapOrder(row, (row.items as Record<string, unknown>[]) ?? [], String(row.customer_name ?? ""), (row.tags as Tag[]) ?? [])
+  );
 }
 
 export async function getOrder(id: string): Promise<Order | null> {
-  if (!isSupabaseConfigured() || !supabase) return null;
-  const { data: orderData, error: orderError } = await supabase
-    .from("orders")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (orderError) {
-    if (orderError.code === "PGRST116") return null;
-    throw orderError;
+  try {
+    const row = await apiFetch(`/api/orders?id=${id}`) as Record<string, unknown>;
+    return row
+      ? mapOrder(row, (row.items as Record<string, unknown>[]) ?? [], String(row.customer_name ?? ""), (row.tags as Tag[]) ?? [])
+      : null;
+  } catch {
+    return null;
   }
-  const { data: itemsData } = await supabase
-    .from("order_items")
-    .select("*")
-    .eq("order_id", id);
-  const items = itemsData ?? [];
-  const customerName = orderData.customer_name ?? "";
-  const nameFromCust = orderData.customer_id
-    ? (await supabase.from("customers").select("name").eq("id", orderData.customer_id).single()).data?.name
-    : null;
-  return mapOrder(orderData, items, customerName || nameFromCust || "");
 }
 
 export async function createOrder(order: {
@@ -481,83 +341,41 @@ export async function createOrder(order: {
   notes?: string;
   items?: Array<{ productId: string; quantity: number; batchId?: string; unitPrice?: number }>;
 }): Promise<Order> {
-  if (!supabase) throw new Error("Supabase not configured");
-
   const itemList = order.items && order.items.length > 0
     ? order.items
-    : [{ productId: order.productId, quantity: order.quantity, batchId: undefined }];
+    : [{ productId: order.productId, quantity: order.quantity, batchId: undefined as string | undefined, unitPrice: undefined as number | undefined }];
 
-  // Load product names and batch prices
-  const productNameMap = new Map<string, string>();
-  const batchMap = new Map<string, ProductBatch>();
-  for (const item of itemList) {
-    if (!productNameMap.has(item.productId)) {
-      const p = await getProduct(item.productId);
-      if (p) productNameMap.set(item.productId, p.name);
-    }
-    if (item.batchId && !batchMap.has(item.batchId)) {
-      const b = await getBatch(item.batchId);
-      if (b) batchMap.set(item.batchId, b);
-    }
-  }
+  // Compute total_amount client-side from item unit prices
+  const totalAmount = itemList.reduce((sum, item) => sum + item.quantity * (item.unitPrice ?? 0), 0);
 
-  const totalAmount = itemList.reduce((sum, item) => {
-    const b = item.batchId ? batchMap.get(item.batchId) : null;
-    return sum + item.quantity * (b?.unitPrice ?? 0);
-  }, 0);
-
-  const { data: { user } } = await supabase.auth.getUser();
-  const orderPayload: Record<string, unknown> = {
+  const body = {
     customer_id: order.customerId || null,
     customer_name: order.customerName,
     order_date: order.date,
     status: order.status,
-    total_amount: totalAmount,
+    payment_status: order.paymentStatus,
+    payment_method: order.paymentMethod ?? null,
+    amount_paid: order.amountPaid ?? 0,
+    delivery_date: order.deliveryDate ?? null,
+    delivery_charge: order.deliveryCharge ?? 0,
     notes: order.notes ?? null,
-    user_id: user?.id ?? null,
-  };
-  if (order.paymentStatus != null) orderPayload.payment_status = order.paymentStatus;
-  orderPayload.payment_method = order.paymentMethod ?? null;
-  orderPayload.amount_paid = order.amountPaid ?? 0;
-  orderPayload.delivery_date = order.deliveryDate ?? null;
-  orderPayload.delivery_charge = order.deliveryCharge ?? 0;
-
-  const { data: orderRow, error: orderError } = await supabase
-    .from("orders")
-    .insert(orderPayload)
-    .select()
-    .single();
-  if (orderError) throw orderError;
-
-  for (const item of itemList) {
-    const b = item.batchId ? batchMap.get(item.batchId) : null;
-    const { error: itemError } = await supabase.from("order_items").insert({
-      order_id: orderRow.id,
+    total_amount: totalAmount,
+    items: itemList.map((item) => ({
       product_id: item.productId,
-      product_name: productNameMap.get(item.productId) ?? "",
+      product_name: "",
       quantity: item.quantity,
-      unit_price: item.unitPrice ?? b?.unitPrice ?? 0,
-      cost_price: b?.costPrice ?? 0,
+      unit_price: item.unitPrice ?? 0,
+      cost_price: 0,
       batch_id: item.batchId ?? null,
-    });
-    if (itemError) throw itemError;
-  }
+    })),
+  };
 
-  // Deduct from batch number_of_bottles — trigger auto-syncs products.quantity
-  if (isStockDeducted(order.status)) {
-    for (const item of itemList) {
-      if (item.batchId) {
-        const b = batchMap.get(item.batchId) ?? await getBatch(item.batchId);
-        if (b && b.numberOfBottles >= item.quantity) {
-          await updateBatch(item.batchId, { numberOfBottles: b.numberOfBottles - item.quantity });
-        } else if (b && b.numberOfBottles < item.quantity) {
-          throw new InsufficientStockError(item.productId, b.numberOfBottles, item.quantity);
-        }
-      }
-    }
-  }
+  const row = await apiFetch("/api/orders", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }) as Record<string, unknown>;
 
-  return getOrder(orderRow.id) as Promise<Order>;
+  return mapOrder(row, (row.items as Record<string, unknown>[]) ?? [], String(row.customer_name ?? ""), (row.tags as Tag[]) ?? []);
 }
 
 export async function updateOrder(
@@ -578,136 +396,46 @@ export async function updateOrder(
     items?: Array<{ productId: string; quantity: number; batchId?: string; unitPrice?: number }>;
   }
 ): Promise<Order> {
-  if (!supabase) throw new Error("Supabase not configured");
-
-  const existing = await getOrder(id);
-  if (!existing) throw new Error("Order not found");
-
-  const orderPayload: Record<string, unknown> = {};
-  if (input.date !== undefined) orderPayload.order_date = input.date;
-  if (input.status !== undefined) orderPayload.status = input.status;
-  if (input.paymentStatus !== undefined) orderPayload.payment_status = input.paymentStatus;
-  if (input.paymentMethod !== undefined) orderPayload.payment_method = input.paymentMethod ?? null;
-  if (input.amountPaid !== undefined) orderPayload.amount_paid = input.amountPaid;
-  if (input.deliveryDate !== undefined) orderPayload.delivery_date = input.deliveryDate ?? null;
-  if (input.deliveryCharge !== undefined) orderPayload.delivery_charge = input.deliveryCharge;
-  if (input.notes !== undefined) orderPayload.notes = input.notes;
-  if (input.customerId !== undefined) orderPayload.customer_id = input.customerId;
-  if (input.customerName !== undefined) orderPayload.customer_name = input.customerName;
+  const payload: Record<string, unknown> = {};
+  if (input.date !== undefined) payload.order_date = input.date;
+  if (input.status !== undefined) payload.status = input.status;
+  if (input.paymentStatus !== undefined) payload.payment_status = input.paymentStatus;
+  if (input.paymentMethod !== undefined) payload.payment_method = input.paymentMethod ?? null;
+  if (input.amountPaid !== undefined) payload.amount_paid = input.amountPaid;
+  if (input.deliveryDate !== undefined) payload.delivery_date = input.deliveryDate ?? null;
+  if (input.deliveryCharge !== undefined) payload.delivery_charge = input.deliveryCharge;
+  if (input.notes !== undefined) payload.notes = input.notes;
+  if (input.customerId !== undefined) payload.customer_id = input.customerId;
+  if (input.customerName !== undefined) payload.customer_name = input.customerName;
 
   const newItems = input.items && input.items.length > 0
     ? input.items
     : input.productId !== undefined || input.quantity !== undefined
-      ? [{ productId: input.productId ?? existing.productId, quantity: input.quantity ?? existing.quantity, batchId: undefined as string | undefined }]
+      ? [{ productId: input.productId!, quantity: input.quantity!, batchId: undefined as string | undefined, unitPrice: undefined as number | undefined }]
       : null;
 
   if (newItems) {
-    // Restore batch stock for existing items (only if stock was previously deducted)
-    if (isStockDeducted(existing.status) && existing.items?.length) {
-      for (const item of existing.items) {
-        if (item.batchId) {
-          const b = await getBatch(item.batchId);
-          if (b) await updateBatch(item.batchId, { numberOfBottles: b.numberOfBottles + item.quantity });
-        }
-      }
-    }
-
-    // Load new batch prices and product names
-    const newBatchMap = new Map<string, ProductBatch>();
-    const productNameMap = new Map<string, string>();
-    for (const item of newItems) {
-      if (!productNameMap.has(item.productId)) {
-        const p = await getProduct(item.productId);
-        if (p) productNameMap.set(item.productId, p.name);
-      }
-      if (item.batchId && !newBatchMap.has(item.batchId)) {
-        const b = await getBatch(item.batchId);
-        if (b) newBatchMap.set(item.batchId, b);
-      }
-    }
-    orderPayload.total_amount = newItems.reduce((sum, item) => {
-      const b = item.batchId ? newBatchMap.get(item.batchId) : null;
-      return sum + item.quantity * (item.unitPrice ?? b?.unitPrice ?? 0);
-    }, 0);
-
-    // Replace all order items
-    await supabase.from("order_items").delete().eq("order_id", id);
-    for (const item of newItems) {
-      const b = item.batchId ? newBatchMap.get(item.batchId) : null;
-      await supabase.from("order_items").insert({
-        order_id: id,
-        product_id: item.productId,
-        product_name: productNameMap.get(item.productId) ?? "",
-        quantity: item.quantity,
-        unit_price: item.unitPrice ?? b?.unitPrice ?? 0,
-        cost_price: b?.costPrice ?? 0,
-        batch_id: item.batchId ?? null,
-      });
-    }
-
-    // Deduct from new batches (only if new status has stock deducted)
-    const newStatus = input.status ?? existing.status;
-    if (isStockDeducted(newStatus)) {
-      for (const item of newItems) {
-        if (item.batchId) {
-          const b = newBatchMap.get(item.batchId) ?? await getBatch(item.batchId);
-          if (b) await updateBatch(item.batchId, { numberOfBottles: Math.max(0, b.numberOfBottles - item.quantity) });
-        }
-      }
-    }
+    payload.total_amount = newItems.reduce((sum, item) => sum + item.quantity * (item.unitPrice ?? 0), 0);
+    payload.items = newItems.map((item) => ({
+      product_id: item.productId,
+      product_name: "",
+      quantity: item.quantity,
+      unit_price: item.unitPrice ?? 0,
+      cost_price: 0,
+      batch_id: item.batchId ?? null,
+    }));
   }
 
-  // Handle status-only changes (no item changes)
-  if (!newItems && input.status !== undefined && input.status !== existing.status) {
-    const wasDeducted = isStockDeducted(existing.status);
-    const willBeDeducted = isStockDeducted(input.status);
+  const row = await apiFetch(`/api/orders?id=${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }) as Record<string, unknown>;
 
-    // Cancelled → Pending: validate stock without deducting
-    if (existing.status === "Cancelled" && input.status === "Pending" && existing.items?.length) {
-      for (const item of existing.items) {
-        if (item.batchId) {
-          const b = await getBatch(item.batchId);
-          if (b && b.numberOfBottles < item.quantity) {
-            throw new InsufficientStockError(item.productId ?? "Product", b.numberOfBottles, item.quantity);
-          }
-        }
-      }
-    }
-
-    if (!wasDeducted && willBeDeducted && existing.items?.length) {
-      // e.g. Pending → Packed: deduct from batch
-      for (const item of existing.items) {
-        if (item.batchId) {
-          const b = await getBatch(item.batchId);
-          if (b && b.numberOfBottles >= item.quantity) {
-            await updateBatch(item.batchId, { numberOfBottles: b.numberOfBottles - item.quantity });
-          } else if (b && b.numberOfBottles < item.quantity) {
-            throw new InsufficientStockError(item.productId ?? "Product", b.numberOfBottles, item.quantity);
-          }
-        }
-      }
-    } else if (wasDeducted && !willBeDeducted && existing.items?.length) {
-      // e.g. Packed → Cancelled or Packed → Pending: restore batch
-      for (const item of existing.items) {
-        if (item.batchId) {
-          const b = await getBatch(item.batchId);
-          if (b) await updateBatch(item.batchId, { numberOfBottles: b.numberOfBottles + item.quantity });
-        }
-      }
-    }
-  }
-
-  if (Object.keys(orderPayload).length > 0) {
-    const userId = await getCurrentUserId();
-    const { error } = await supabase!.from("orders").update(orderPayload).eq("id", id).eq("user_id", userId);
-    if (error) throw error;
-  }
-
-  return getOrder(id) as Promise<Order>;
+  return mapOrder(row, (row.items as Record<string, unknown>[]) ?? [], String(row.customer_name ?? ""), (row.tags as Tag[]) ?? []);
 }
 
 export async function deleteOrder(id: string): Promise<void> {
-  const userId = await getCurrentUserId();
+  // Restore batch stock client-side before deletion (server doesn't handle this yet)
   const order = await getOrder(id);
   if (order && isStockDeducted(order.status) && order.items?.length) {
     for (const item of order.items) {
@@ -717,105 +445,23 @@ export async function deleteOrder(id: string): Promise<void> {
       }
     }
   }
-  await supabase!.from("order_items").delete().eq("order_id", id);
-  const { error } = await supabase!.from("orders").delete().eq("id", id).eq("user_id", userId);
-  if (error) throw error;
-}
-
-// ——— Order items (for future multi-line orders) ———
-
-export async function getOrderItems(orderId: string): Promise<OrderItem[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data, error } = await supabase
-    .from("order_items")
-    .select("*")
-    .eq("order_id", orderId);
-  if (error) throw error;
-  return (data ?? []).map(mapOrderItem);
-}
-
-
-
-export async function updateProductUnitSize(id: string, unitSize: number): Promise<Product> {
-  invalidateProductsCache();
-  const userId = await getCurrentUserId();
-  const { data, error } = await supabase!.from('products').update({ unit_size: unitSize })
-    .eq('id', id).eq('user_id', userId).select().single();
-  if (error) throw error;
-  return mapProduct(data);
-}
-
-export async function updateProductReorderThreshold(id: string, threshold: number): Promise<Product> {
-  invalidateProductsCache();
-  const userId = await getCurrentUserId();
-  const { data, error } = await supabase!.from('products').update({ reorder_threshold: threshold })
-    .eq('id', id).eq('user_id', userId).select().single();
-  if (error) throw error;
-  return mapProduct(data);
-}
-
-export async function deleteOrderItem(id: string): Promise<void> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { error } = await supabase.from("order_items").delete().eq("id", id);
-  if (error) throw error;
+  await apiFetch(`/api/orders?id=${id}`, { method: "DELETE" });
 }
 
 // ——— Product Batches ———
 
-function mapBatch(row: Record<string, unknown>): ProductBatch {
-  return {
-    id: String(row.id),
-    productId: String(row.product_id),
-    batchNumber: String(row.batch_number),
-    numberOfBottles: Number(row.number_of_bottles),
-    bottleSizeLitres: Number(row.bottle_size_litres),
-    unitPrice: Number(row.unit_price ?? 0),
-    costPrice: Number(row.cost_price ?? 0),
-    quantityLitres: Number(row.quantity_litres ?? 0),
-    manufactureDate: row.manufacture_date ? String(row.manufacture_date) : null,
-    expiryDate: row.expiry_date ? String(row.expiry_date) : null,
-    notes: row.notes ? String(row.notes) : undefined,
-    createdAt: row.created_at ? String(row.created_at) : undefined,
-  };
-}
-
-async function getNextBatchSeq(productId: string, date: Date): Promise<number> {
-  if (!supabase) return 1;
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const prefix = `BATCH-${y}${m}${d}-`;
-  const { count } = await supabase
-    .from("product_batches")
-    .select("id", { count: "exact", head: true })
-    .eq("product_id", productId)
-    .like("batch_number", `${prefix}%`);
-  return (count ?? 0) + 1;
-}
-
 export async function getBatchesForProduct(productId: string): Promise<ProductBatch[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data, error } = await supabase
-    .from("product_batches")
-    .select("*")
-    .eq("product_id", productId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map(mapBatch);
+  const data = await apiFetch(`/api/batches?productId=${productId}`) as Record<string, unknown>[];
+  return data.map(mapBatch);
 }
 
 export async function getBatch(id: string): Promise<ProductBatch | null> {
-  if (!isSupabaseConfigured() || !supabase) return null;
-  const { data, error } = await supabase
-    .from("product_batches")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw error;
+  try {
+    const data = await apiFetch(`/api/batches?id=${id}`) as Record<string, unknown>;
+    return data ? mapBatch(data) : null;
+  } catch {
+    return null;
   }
-  return data ? mapBatch(data) : null;
 }
 
 export async function createBatch(input: {
@@ -827,18 +473,14 @@ export async function createBatch(input: {
   manufactureDate?: string | null;
   expiryDate?: string | null;
   notes?: string;
+  batchNumber?: string;
 }): Promise<ProductBatch> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const userId = await getCurrentUserId();
-  const now = new Date();
-  const seq = await getNextBatchSeq(input.productId, now);
-  const batchNumber = generateBatchNumber(now, seq);
   const quantityLitres = input.numberOfBottles * input.bottleSizeLitres;
-  const { data, error } = await supabase
-    .from("product_batches")
-    .insert({
+  const data = await apiFetch("/api/batches", {
+    method: "POST",
+    body: JSON.stringify({
       product_id: input.productId,
-      batch_number: batchNumber,
+      batch_number: input.batchNumber ?? "",
       number_of_bottles: input.numberOfBottles,
       bottle_size_litres: input.bottleSizeLitres,
       unit_price: input.unitPrice,
@@ -847,11 +489,8 @@ export async function createBatch(input: {
       manufacture_date: input.manufactureDate ?? null,
       expiry_date: input.expiryDate ?? null,
       notes: input.notes ?? null,
-      user_id: userId,
-    })
-    .select()
-    .single();
-  if (error) throw error;
+    }),
+  }) as Record<string, unknown>;
   return mapBatch(data);
 }
 
@@ -859,13 +498,12 @@ export async function updateBatch(
   id: string,
   input: Partial<Pick<ProductBatch, "numberOfBottles" | "bottleSizeLitres" | "unitPrice" | "costPrice" | "quantityLitres" | "manufactureDate" | "expiryDate" | "notes">>
 ): Promise<ProductBatch> {
-  const userId = await getCurrentUserId();
   const payload: Record<string, unknown> = {};
   if (input.numberOfBottles !== undefined) payload.number_of_bottles = input.numberOfBottles;
   if (input.bottleSizeLitres !== undefined) payload.bottle_size_litres = input.bottleSizeLitres;
   if (input.unitPrice !== undefined) payload.unit_price = input.unitPrice;
   if (input.costPrice !== undefined) payload.cost_price = input.costPrice;
-  // Recalculate quantity_litres (informational) whenever both bottle fields are present
+  // Recalculate quantity_litres whenever both bottle fields are present
   if (input.numberOfBottles !== undefined && input.bottleSizeLitres !== undefined) {
     payload.quantity_litres = input.numberOfBottles * input.bottleSizeLitres;
   } else if (input.quantityLitres !== undefined) {
@@ -874,175 +512,77 @@ export async function updateBatch(
   if (input.manufactureDate !== undefined) payload.manufacture_date = input.manufactureDate ?? null;
   if (input.expiryDate !== undefined) payload.expiry_date = input.expiryDate ?? null;
   if (input.notes !== undefined) payload.notes = input.notes ?? null;
-  const { data, error } = await supabase!
-    .from("product_batches")
-    .update(payload)
-    .eq("id", id)
-    .eq("user_id", userId)
-    .select()
-    .single();
-  if (error) throw error;
+  const data = await apiFetch(`/api/batches?id=${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }) as Record<string, unknown>;
   return mapBatch(data);
 }
 
 export async function deleteBatch(id: string): Promise<void> {
-  const userId = await getCurrentUserId();
-  const { error } = await supabase!
-    .from("product_batches")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) throw error;
+  await apiFetch(`/api/batches?id=${id}`, { method: "DELETE" });
 }
 
-// ── FEATURE FLAGS ────────────────────────────────────────────────────────────
-
-/**
- * Fetches feature flags for the current user.
- * If no row exists yet (new user), inserts a default row and returns defaults.
- */
-export async function getFeatureFlags(): Promise<FeatureFlags> {
-  if (isFresh(_featureFlagsCache)) return _featureFlagsCache.data;
-  if (!isSupabaseConfigured() || !supabase) return defaultFlags;
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return defaultFlags;
-
-  const { data, error } = await supabase
-    .from("feature_flags")
-    .select("ai_price_update, ai_order_fill")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Failed to fetch feature flags:", error);
-    return defaultFlags;
-  }
-
-  let result: FeatureFlags;
-
-  // No row yet — first login. Insert defaults.
-  if (!data) {
-    const { data: inserted, error: insertError } = await supabase
-      .from("feature_flags")
-      .insert({ user_id: user.id, ...defaultFlags })
-      .select("ai_price_update, ai_order_fill")
-      .single();
-
-    if (insertError) {
-      console.error("Failed to create feature flags:", insertError);
-      return defaultFlags;
-    }
-    result = inserted as FeatureFlags;
-  } else {
-    result = data as FeatureFlags;
-  }
-
-  _featureFlagsCache = { data: result, ts: Date.now() };
-  return result;
-}
-
-// ——— Tags ———
+// ── Tags ─────────────────────────────────────────────────────────────────────
 
 export async function getTags(): Promise<Tag[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data, error } = await supabase.from("tags").select("*").order("name");
-  if (error) throw error;
-  return (data ?? []).map((r) => ({ id: String(r.id), name: String(r.name), color: String(r.color) }));
+  const data = await apiFetch("/api/tags") as Record<string, unknown>[];
+  return data.map((r) => ({ id: String(r.id), name: String(r.name), color: String(r.color) }));
 }
 
 export async function createTag(name: string, color: string): Promise<Tag> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const userId = await getCurrentUserId();
-  const { data, error } = await supabase.from("tags").insert({ name: name.trim(), color, user_id: userId }).select().single();
-  if (error) throw error;
+  const data = await apiFetch("/api/tags", {
+    method: "POST",
+    body: JSON.stringify({ name, color }),
+  }) as Record<string, unknown>;
   return { id: String(data.id), name: String(data.name), color: String(data.color) };
 }
 
 export async function deleteTag(id: string): Promise<void> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { error } = await supabase.from("tags").delete().eq("id", id);
-  if (error) throw error;
+  await apiFetch(`/api/tags?id=${id}`, { method: "DELETE" });
 }
 
 export async function assignTagToOrder(orderId: string, tagId: string): Promise<void> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { error } = await supabase.from("order_tags").insert({ order_id: orderId, tag_id: tagId });
-  if (error && !error.message.includes("duplicate")) throw error;
-}
-
-export async function removeTagFromOrder(orderId: string, tagId: string): Promise<void> {
-  if (!supabase) throw new Error("Supabase not configured");
-  const { error } = await supabase.from("order_tags").delete().eq("order_id", orderId).eq("tag_id", tagId);
-  if (error) throw error;
-}
-
-export async function getTagsForOrder(orderId: string): Promise<Tag[]> {
-  if (!isSupabaseConfigured() || !supabase) return [];
-  const { data, error } = await supabase
-    .from("order_tags")
-    .select("tags(id, name, color)")
-    .eq("order_id", orderId);
-  if (error) throw error;
-  return (data ?? []).map((r) => {
-    const t = (r as any).tags;
-    return { id: String(t.id), name: String(t.name), color: String(t.color) };
+  await apiFetch("/api/tags?action=assign", {
+    method: "POST",
+    body: JSON.stringify({ order_id: orderId, tag_id: tagId }),
   });
 }
 
-// ——— Receipts ———
+export async function removeTagFromOrder(orderId: string, tagId: string): Promise<void> {
+  await apiFetch(`/api/tags?action=remove&orderId=${orderId}&tagId=${tagId}`, { method: "DELETE" });
+}
+
+export async function getTagsForOrder(orderId: string): Promise<Tag[]> {
+  const data = await apiFetch(`/api/tags?orderId=${orderId}`) as Record<string, unknown>[];
+  return data.map((r) => ({ id: String(r.id), name: String(r.name), color: String(r.color) }));
+}
+
+// ── Receipts ─────────────────────────────────────────────────────────────────
 
 export async function getNextReceiptNumber(orderDate: string): Promise<number> {
-  if (!isSupabaseConfigured() || !supabase) return 1;
-  const { getFYDateRange } = await import("./receiptGenerator");
-  const { start, end } = getFYDateRange(orderDate);
-  const { data } = await supabase
-    .from("orders")
-    .select("receipt_number")
-    .not("receipt_number", "is", null)
-    .gte("order_date", start)
-    .lte("order_date", end)
-    .order("receipt_number", { ascending: false })
-    .limit(1);
-  return ((data?.[0]?.receipt_number as number) ?? 0) + 1;
+  const data = await apiFetch(`/api/receipts?action=next-number&orderDate=${orderDate}`) as { next_number: number };
+  return data.next_number;
 }
 
 export async function saveReceiptNumber(orderId: string, receiptNumber: number): Promise<void> {
-  if (!isSupabaseConfigured() || !supabase) return;
-  await supabase.from("orders").update({ receipt_number: receiptNumber }).eq("id", orderId);
+  await apiFetch(`/api/receipts?id=${orderId}`, {
+    method: "PUT",
+    body: JSON.stringify({ receipt_number: receiptNumber }),
+  });
 }
 
-export async function receiptExists(orderId: string): Promise<boolean> {
-  if (!isSupabaseConfigured() || !supabase) return false;
-  const userId = await getCurrentUserId();
-  const { data } = await supabase.storage
-    .from("receipts")
-    .list(userId, { search: `${orderId}.pdf` });
-  return (data ?? []).some((f) => f.name === `${orderId}.pdf`);
-}
+// ── Feature Flags ─────────────────────────────────────────────────────────────
 
-export async function uploadReceipt(orderId: string, pdfBlob: Blob, receiptNumber?: number): Promise<void> {
-  if (!isSupabaseConfigured() || !supabase) return;
-  const userId = await getCurrentUserId();
-  const path = `${userId}/${orderId}.pdf`;
-  const { error } = await supabase.storage
-    .from("receipts")
-    .upload(path, pdfBlob, { contentType: "application/pdf", upsert: true });
-  if (error) throw error;
-  // Save receipt number atomically with the upload so they're never out of sync
-  if (receiptNumber !== undefined) {
-    await supabase.from("orders").update({ receipt_number: receiptNumber }).eq("id", orderId);
+export async function getFeatureFlags(): Promise<FeatureFlags> {
+  if (isFresh(_featureFlagsCache)) return _featureFlagsCache.data;
+  try {
+    const data = await apiFetch("/api/feature-flags") as FeatureFlags;
+    const result: FeatureFlags = { ...defaultFlags, ...data };
+    _featureFlagsCache = { data: result, ts: Date.now() };
+    return result;
+  } catch (err) {
+    console.error("Failed to fetch feature flags:", err);
+    return defaultFlags;
   }
 }
-
-export async function getReceiptDownloadUrl(orderId: string): Promise<string | null> {
-  if (!isSupabaseConfigured() || !supabase) return null;
-  const userId = await getCurrentUserId();
-  const path = `${userId}/${orderId}.pdf`;
-  const { data, error } = await supabase.storage
-    .from("receipts")
-    .createSignedUrl(path, 3600); // 1 hour expiry
-  if (error) return null;
-  return data.signedUrl;
-}
-

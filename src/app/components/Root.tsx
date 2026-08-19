@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router";
 import { Home, Package, ShoppingCart, Users, WifiOff, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+
 import { useOnlineStatus } from "../hooks/useOfflineStorage";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getFeatureFlags, invalidateProductsCache, invalidateCustomersCache } from "../../lib/api";
+import { signOut } from "../../lib/neonAuth";
 import { FeatureFlagsContext, defaultFlags, type FeatureFlags } from "../../lib/featureFlags";
-import React from "react";
 
 export function Root() {
   const location = useLocation();
@@ -14,7 +14,7 @@ export function Root() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
-    if (!isSupabaseConfigured() || !isOnline) return;
+    if (!isOnline) return;
     getFeatureFlags().then(setFlags).catch(console.error);
   }, [isOnline]);
 
@@ -32,9 +32,8 @@ export function Root() {
   }, []);
 
   const handleSignOut = async () => {
-    if (isSupabaseConfigured() && supabase) {
-      await supabase.auth.signOut();
-    }
+    await signOut();
+    window.location.href = "/login";
   };
 
   const navItems = [
@@ -106,16 +105,14 @@ export function Root() {
 
           {/* Bottom: sign out + collapse toggle */}
           <div className="px-2 pb-4 pt-3 border-t border-[#eaedff] space-y-1 flex-shrink-0">
-            {isSupabaseConfigured() && (
-              <button
-                onClick={handleSignOut}
-                title={sidebarCollapsed ? "Sign Out" : undefined}
-                className={`flex items-center gap-3 ${sidebarCollapsed ? "justify-center" : ""} w-full px-3 py-2.5 rounded-xl text-sm font-semibold text-[#434655] hover:text-[#ba1a1a] hover:bg-red-50 transition-all duration-200 whitespace-nowrap`}
-              >
-                <LogOut className="h-[18px] w-[18px] flex-shrink-0 stroke-2" />
-                {!sidebarCollapsed && <span>Sign Out</span>}
-              </button>
-            )}
+            <button
+              onClick={handleSignOut}
+              title={sidebarCollapsed ? "Sign Out" : undefined}
+              className={`flex items-center gap-3 ${sidebarCollapsed ? "justify-center" : ""} w-full px-3 py-2.5 rounded-xl text-sm font-semibold text-[#434655] hover:text-[#ba1a1a] hover:bg-red-50 transition-all duration-200 whitespace-nowrap`}
+            >
+              <LogOut className="h-[18px] w-[18px] flex-shrink-0 stroke-2" />
+              {!sidebarCollapsed && <span>Sign Out</span>}
+            </button>
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -172,15 +169,13 @@ export function Root() {
                 </Link>
               );
             })}
-            {isSupabaseConfigured() && (
-              <button
-                onClick={handleSignOut}
-                className="flex flex-col items-center justify-center gap-1 py-2 px-4 rounded-xl transition-all duration-200 min-w-[72px] text-[#434655] hover:text-[#ba1a1a]"
-              >
-                <LogOut className="h-6 w-6 stroke-2" />
-                <span className="text-[10px] uppercase tracking-wider font-semibold">Sign Out</span>
-              </button>
-            )}
+            <button
+              onClick={handleSignOut}
+              className="flex flex-col items-center justify-center gap-1 py-2 px-4 rounded-xl transition-all duration-200 min-w-[72px] text-[#434655] hover:text-[#ba1a1a]"
+            >
+              <LogOut className="h-6 w-6 stroke-2" />
+              <span className="text-[10px] uppercase tracking-wider font-semibold">Sign Out</span>
+            </button>
           </div>
         </nav>
       </div>

@@ -9,7 +9,6 @@ import {
   getOrders,
   getCustomers,
 } from "../../lib/api";
-import { isSupabaseConfigured } from "../../lib/supabase";
 import { setCachedOrders, setCachedCustomers } from "../../lib/cache";
 
 /** Fired after a sync completes so list components can re-read IndexedDB. */
@@ -30,7 +29,7 @@ export function useOfflineSync() {
     if (!wasOffline.current) return;
     wasOffline.current = false;
 
-    if (!isSupabaseConfigured() || isSyncing.current) return;
+    if (isSyncing.current) return;
 
     const sync = async () => {
       isSyncing.current = true;
